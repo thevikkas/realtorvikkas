@@ -1,0 +1,26 @@
+# Render deployment blueprint for Realtor Vikkas.
+#
+# In Render:  New +  →  Blueprint  →  pick this repo.
+# Render reads everything below automatically.
+#
+# The "starter" plan (paid) is used because it supports a persistent disk —
+# that is what keeps customer sign-ups, enquiries and listings safe across
+# restarts and redeploys. The database file is stored on the disk mounted at
+# /var/data (see DATABASE_PATH below).
+services:
+  - type: web
+    name: realtor-vikkas
+    runtime: python
+    plan: starter
+    # No third-party packages, so there is nothing to build.
+    buildCommand: ""
+    startCommand: python3 app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_PATH
+        value: /var/data/realtor.db
+    disk:
+      name: realtor-data
+      mountPath: /var/data
+      sizeGB: 1
