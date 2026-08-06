@@ -8,6 +8,7 @@ Public site + customer panel + owner (admin) panel, backed by SQLite.
 
 import html
 import os
+import re
 import urllib.parse
 from http import cookies as http_cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -327,66 +328,250 @@ def submit_enquiry(req):
 # Auth routes
 # ---------------------------------------------------------------------------
 
+def auth_aside(role):
+    """Left-hand brand panel for the split auth pages."""
+    if role == "owner":
+        head = "Manage your listings and leads in one place."
+        points = [
+            "List, edit and feature properties across every region.",
+            "Track buyer enquiries from a single leads inbox.",
+            "See what's converting with a live dashboard.",
+        ]
+    else:
+        head = "Find your next home, land or investment with confidence."
+        points = [
+            "Browse verified listings across Rajasthan, Delhi NCR &amp; Gujarat.",
+            "Save your favourites and revisit them anytime.",
+            "Enquire directly and hear back from the owner.",
+        ]
+    check = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+             'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>')
+    lis = "".join(f"<li>{check}<span>{p}</span></li>" for p in points)
+    return f"""
+  <aside class="auth-aside">
+    <div>
+      <div class="auth-logo">Realtor Vikkas</div>
+      <div class="auth-logo-sub">Property Register · Est. Jaipur</div>
+    </div>
+    <div>
+      <h2>{head}</h2>
+      <ul class="auth-points">{lis}</ul>
+    </div>
+    <div class="auth-aside-foot">Trusted by buyers &amp; owners across Rajasthan, Delhi NCR, Gujarat &amp; the Himalayas.</div>
+  </aside>"""
+
+
+ICON_MAIL = ('<svg class="i-lead" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+             'stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>')
+ICON_LOCK = ('<svg class="i-lead" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+             'stroke-width="1.7"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>')
+ICON_USER = ('<svg class="i-lead" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+             'stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>')
+ICON_PHONE = ('<svg class="i-lead" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+              'stroke-width="1.7"><path d="M4 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L20 13l2 5v0a2 2 0 0 1-2 2 16 16 0 0 1-16-16 2 2 0 0 1 2-2Z"/></svg>')
+ICON_MAIL_DARK = ('<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+                  'stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>')
+
+PW_TOGGLE_JS = """
+<script>
+document.querySelectorAll('.pw-toggle').forEach(function(b){
+  b.addEventListener('click', function(){
+    var i = this.closest('.input-wrap').querySelector('input');
+    var show = i.type === 'password';
+    i.type = show ? 'text' : 'password';
+    this.textContent = show ? 'Hide' : 'Show';
+  });
+});
+</script>"""
+
+
+COUNTRY_CODES = ["+91", "+1", "+44", "+971", "+61", "+65"]
+
+
 def login_form(req):
+    """Customer login is phone-first (image style). Email + owner use the split form."""
+    if req.q("as") == "owner":
+        return login_form_email(req, "owner")
+    if req.q("method") == "email":
+        return login_form_email(req, "customer")
+    return login_form_phone(req)
+
+
+def login_form_phone(req):
+    ccode_opts = "".join(
+        f'<option value="{c}"{" selected" if c == "+91" else ""}>{c}</option>' for c in COUNTRY_CODES)
     body = f"""
-<div class="card auth-card">
-  <p class="eyebrow">Welcome back</p>
-  <h1 style="font-size:1.6rem">Log in</h1>
-  <form method="post" action="/login" style="margin-top:1.2rem">
-    <div style="margin-bottom:0.9rem"><label>Email</label><input name="email" type="email" required></div>
-    <div style="margin-bottom:0.9rem"><label>Password</label><input name="password" type="password" required></div>
-    <button class="btn btn-brass" type="submit">Log in</button>
+<div class="login-modal">
+  <div class="login-modal-head">
+    <h1>Login / Register</h1>
+    <a class="close" href="/" title="Close" aria-label="Close">&times;</a>
+  </div>
+  <p class="prompt">Enter your phone number and password to continue.</p>
+  <form method="post" action="/login" autocomplete="on">
+    <div class="boxed-field">
+      <div class="bf-label">Phone Number</div>
+      <div class="bf-row">
+        <select class="ccode" name="ccode" aria-label="Country code">{ccode_opts}</select>
+        <input name="phone" type="tel" inputmode="numeric" placeholder="98765 43210" autocomplete="tel-national" required autofocus>
+      </div>
+    </div>
+    <div class="boxed-field">
+      <div class="bf-label">Password</div>
+      <div class="bf-row">
+        <input class="has-toggle" name="password" type="password" placeholder="Your password" autocomplete="current-password" required>
+        <button type="button" class="pw-toggle">Show</button>
+      </div>
+    </div>
+    <button class="btn-continue" type="submit">Continue</button>
   </form>
-  <p style="margin-top:1rem;font-size:0.85rem;color:var(--muted)">New here? <a class="muted-link" href="/register">Create a customer account</a></p>
-  <p style="margin-top:0.6rem;font-size:0.78rem;color:var(--muted)">Owner demo: owner@realtorvikkas.in / vikkas123 · Customer demo: customer@example.com / demo1234</p>
+  <a class="btn-outline" href="/login?method=email">{ICON_MAIL_DARK} Login with Email</a>
+  <p class="login-owner-link">Property owner? <a class="muted-link" href="/login?as=owner">Owner login</a></p>
+  <p class="login-terms">By clicking you agree to our <a href="/terms">Terms and Conditions</a>.</p>
+  <div class="demo-hint" style="margin-top:1rem">Customer demo — phone <b>90000 11111</b> / password <b>demo1234</b></div>
 </div>
+{PW_TOGGLE_JS}
+"""
+    return Response(layout("Login", body, req))
+
+
+def login_form_email(req, role):
+    cust_active = " is-active" if role == "customer" else ""
+    own_active = " is-active" if role == "owner" else ""
+    if role == "owner":
+        sub = "Sign in to your owner dashboard to manage listings and leads."
+        demo = 'Owner demo — <b>owner@realtorvikkas.in</b> / <b>vikkas123</b>'
+        phone_switch = ""
+    else:
+        sub = "Sign in to browse, save and enquire on properties."
+        demo = 'Customer demo — <b>customer@example.com</b> / <b>demo1234</b>'
+        phone_switch = ('<p class="login-owner-link">Prefer your phone? '
+                        '<a class="muted-link" href="/login">Login with phone number</a></p>')
+    body = f"""
+<div class="auth-shell">
+  {auth_aside(role)}
+  <div class="auth-main">
+    <div class="auth-tabs">
+      <a class="auth-tab{cust_active}" href="/login?method=email">Login</a>
+      <a class="auth-tab{own_active}" href="/login?as=owner">Owner login</a>
+    </div>
+    <h1>Welcome back</h1>
+    <p class="auth-sub">{sub}</p>
+    <form method="post" action="/login" autocomplete="on">
+      <input type="hidden" name="ctx" value="{role}">
+      <div class="field-group">
+        <label>Email address</label>
+        <div class="input-wrap">{ICON_MAIL}<input name="email" type="email" placeholder="you@example.com" autocomplete="email" required autofocus></div>
+      </div>
+      <div class="field-group">
+        <label>Password</label>
+        <div class="input-wrap">{ICON_LOCK}<input class="has-toggle" name="password" type="password" placeholder="Your password" autocomplete="current-password" required>
+          <button type="button" class="pw-toggle">Show</button></div>
+      </div>
+      <div class="auth-row">
+        <label class="check"><input type="checkbox" name="remember" checked> Keep me signed in</label>
+        <a class="muted-link" href="mailto:owner@realtorvikkas.in?subject=Password%20reset">Forgot password?</a>
+      </div>
+      <button class="btn btn-brass" type="submit">Log in</button>
+    </form>
+    <p class="auth-alt">New to Realtor Vikkas? <a class="muted-link" href="/register">Create an account</a></p>
+    {phone_switch}
+    <div class="demo-hint">{demo}</div>
+  </div>
+</div>
+{PW_TOGGLE_JS}
 """
     return Response(layout("Log in", body, req))
 
 
+def phone_digits(value):
+    """Last 10 digits of a phone number, ignoring country code, spaces and symbols."""
+    return re.sub(r"\D", "", value or "")[-10:]
+
+
 def login(req):
-    email = req.f("email").lower()
+    email = req.f("email").strip().lower()
+    phone = req.f("phone").strip()
+    by_phone = bool(phone) and not email
     conn = get_conn()
-    u = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    if by_phone:
+        digits = phone_digits(phone)
+        u = None
+        if len(digits) == 10:
+            for row in conn.execute("SELECT * FROM users").fetchall():
+                if phone_digits(row["phone"]) == digits:
+                    u = row
+                    break
+    else:
+        u = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
     conn.close()
     if not u or not auth.verify_password(req.f("password"), u["password_hash"]):
-        return redirect("/login", err="Invalid email or password.")
+        if by_phone:
+            return redirect("/login", err="Invalid phone number or password.")
+        target = "/login?as=owner" if req.f("ctx") == "owner" else "/login?method=email"
+        return redirect(target, err="Invalid email or password.")
     token = auth.create_session(u["id"])
     resp = redirect("/owner" if u["role"] == "owner" else "/account",
                     msg=f"Welcome back, {u['name']}.")
-    resp.set_cookie("session", token, max_age=14 * 24 * 3600)
+    # "Keep me signed in" → 14-day persistent cookie; otherwise a session cookie.
+    max_age = 14 * 24 * 3600 if req.f("remember") else None
+    resp.set_cookie("session", token, max_age=max_age)
     return resp
 
 
 def register_form(req):
-    body = """
-<div class="card auth-card">
-  <p class="eyebrow">Join the register</p>
-  <h1 style="font-size:1.6rem">Create your account</h1>
-  <form method="post" action="/register" style="margin-top:1.2rem">
-    <div style="margin-bottom:0.9rem"><label>Full name</label><input name="name" required></div>
-    <div style="margin-bottom:0.9rem"><label>Email</label><input name="email" type="email" required></div>
-    <div style="margin-bottom:0.9rem"><label>Phone</label><input name="phone"></div>
-    <div style="margin-bottom:0.9rem"><label>Password</label><input name="password" type="password" minlength="6" required></div>
-    <button class="btn btn-brass" type="submit">Sign up</button>
-  </form>
-  <p style="margin-top:1rem;font-size:0.85rem;color:var(--muted)">Already registered? <a class="muted-link" href="/login">Log in</a></p>
+    body = f"""
+<div class="auth-shell">
+  {auth_aside("customer")}
+  <div class="auth-main">
+    <h1>Create your account</h1>
+    <p class="auth-sub">Join the register to save listings and enquire in seconds — it's free.</p>
+    <form method="post" action="/register" autocomplete="on">
+      <div class="field-group">
+        <label>Full name</label>
+        <div class="input-wrap">{ICON_USER}<input name="name" placeholder="Your name" autocomplete="name" required autofocus></div>
+      </div>
+      <div class="field-group">
+        <label>Email address</label>
+        <div class="input-wrap">{ICON_MAIL}<input name="email" type="email" placeholder="you@example.com" autocomplete="email" required></div>
+      </div>
+      <div class="field-group">
+        <label>Phone number <span style="font-weight:400;text-transform:none;letter-spacing:0">(you can log in with this)</span></label>
+        <div class="input-wrap">{ICON_PHONE}<input name="phone" type="tel" inputmode="numeric" placeholder="+91 98765 43210" autocomplete="tel" required></div>
+      </div>
+      <div class="field-group">
+        <label>Password</label>
+        <div class="input-wrap">{ICON_LOCK}<input class="has-toggle" name="password" type="password" placeholder="At least 6 characters" minlength="6" autocomplete="new-password" required>
+          <button type="button" class="pw-toggle">Show</button></div>
+      </div>
+      <button class="btn btn-brass" type="submit">Create account</button>
+    </form>
+    <p class="auth-alt">Already registered? <a class="muted-link" href="/login">Log in</a></p>
+    <div class="demo-hint">Are you a property owner? <a class="muted-link" href="/login?as=owner">Use the owner login</a> to reach your dashboard.</div>
+  </div>
 </div>
+{PW_TOGGLE_JS}
 """
     return Response(layout("Sign up", body, req))
 
 
 def register(req):
     name, email, pw = req.f("name"), req.f("email").lower(), req.f("password")
-    if len(pw) < 6 or not name or not email:
+    phone = req.f("phone").strip()
+    if len(pw) < 6 or not name or not email or not phone:
         return redirect("/register", err="Please fill every field (password 6+ chars).")
+    if len(phone_digits(phone)) != 10:
+        return redirect("/register", err="Please enter a valid 10-digit phone number.")
     conn = get_conn()
     if conn.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
         conn.close()
         return redirect("/register", err="An account with that email already exists.")
+    digits = phone_digits(phone)
+    if any(phone_digits(r["phone"]) == digits for r in conn.execute("SELECT phone FROM users").fetchall()):
+        conn.close()
+        return redirect("/register", err="An account with that phone number already exists.")
     uid = conn.execute(
         "INSERT INTO users (name, email, phone, password_hash, role, created_at) VALUES (?,?,?,?,?,?)",
-        (name, email, req.f("phone"), auth.hash_password(pw), "customer", now())).lastrowid
+        (name, email, phone, auth.hash_password(pw), "customer", now())).lastrowid
     conn.commit()
     conn.close()
     token = auth.create_session(uid)
@@ -401,6 +586,26 @@ def logout(req):
     resp = redirect("/", msg="You have been logged out.")
     resp.set_cookie("session", "", delete=True)
     return resp
+
+
+def terms_page(req):
+    body = """
+<div class="card" style="max-width:760px;margin:1.5rem auto">
+  <p class="eyebrow">Legal</p>
+  <h1 style="font-size:1.7rem">Terms &amp; Conditions</h1>
+  <p class="lead" style="margin-top:0.6rem">A plain-language summary of how Realtor Vikkas works.</p>
+  <div style="margin-top:1.4rem;display:flex;flex-direction:column;gap:1rem;color:var(--muted);font-size:0.92rem;line-height:1.65">
+    <p><b style="color:var(--ink)">1. Accounts.</b> You are responsible for keeping your login details private. Provide accurate contact information so owners can reach you about enquiries.</p>
+    <p><b style="color:var(--ink)">2. Listings.</b> Property details are provided by owners and are indicative only. Verify all details, pricing and documents independently before any transaction.</p>
+    <p><b style="color:var(--ink)">3. Enquiries.</b> Submitting an enquiry shares your name and contact details with the property owner so they can respond.</p>
+    <p><b style="color:var(--ink)">4. Acceptable use.</b> Do not post unlawful, misleading or infringing content, and do not misuse the platform or other users' data.</p>
+    <p><b style="color:var(--ink)">5. Liability.</b> Realtor Vikkas is a listing platform and is not a party to any deal between buyers, renters and owners.</p>
+    <p style="font-size:0.82rem">Questions? Email <a class="muted-link" href="mailto:owner@realtorvikkas.in">owner@realtorvikkas.in</a>.</p>
+  </div>
+  <p style="margin-top:1.4rem"><a class="btn btn-ghost" href="/login">← Back to login</a></p>
+</div>
+"""
+    return Response(layout("Terms & Conditions", body, req))
 
 
 # ---------------------------------------------------------------------------
@@ -743,6 +948,8 @@ def dispatch(req):
         return register(req) if m == "POST" else register_form(req)
     if path == "/logout":
         return logout(req)
+    if path == "/terms":
+        return terms_page(req)
 
     # customer panel
     if path == "/account" and m == "GET":
