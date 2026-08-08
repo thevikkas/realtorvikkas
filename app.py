@@ -461,7 +461,6 @@ def login_form_phone(req):
   <a class="btn-outline" href="/login?method=email">{ICON_MAIL_DARK} Login with Email</a>
   <p class="login-owner-link">Property owner? <a class="muted-link" href="/login?as=owner">Owner login</a></p>
   <p class="login-terms">By clicking you agree to our <a href="/terms">Terms and Conditions</a>.</p>
-  <div class="demo-hint" style="margin-top:1rem">Customer demo — phone <b>90000 11111</b> / password <b>demo1234</b></div>
 </div>
 {PW_TOGGLE_JS}
 """
@@ -473,11 +472,9 @@ def login_form_email(req, role):
     own_active = " is-active" if role == "owner" else ""
     if role == "owner":
         sub = "Sign in to your owner dashboard to manage listings and leads."
-        demo = 'Owner demo — <b>owner@realtorvikkas.in</b> / <b>vikkas123</b>'
         phone_switch = ""
     else:
         sub = "Sign in to browse, save and enquire on properties."
-        demo = 'Customer demo — <b>customer@example.com</b> / <b>demo1234</b>'
         phone_switch = ('<p class="login-owner-link">Prefer your phone? '
                         '<a class="muted-link" href="/login">Login with phone number</a></p>')
     body = f"""
@@ -509,7 +506,6 @@ def login_form_email(req, role):
     </form>
     <p class="auth-alt">New to Realtor Vikkas? <a class="muted-link" href="/register">Create an account</a></p>
     {phone_switch}
-    <div class="demo-hint">{demo}</div>
   </div>
 </div>
 {PW_TOGGLE_JS}
