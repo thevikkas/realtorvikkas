@@ -18,7 +18,7 @@ from database import get_conn, init_db, now
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "static")
-PORT = int(os.environ.get("PORT", "8000"))
+PORT = int(os.environ.get("PORT") or 10000)   # Render routes to $PORT (default 10000)
 
 CITIES = ["Jaipur", "Udaipur", "Jodhpur", "Delhi NCR", "Ahmedabad",
           "Gandhinagar", "Shimla", "Manali"]
