@@ -121,6 +121,7 @@ def layout(title, body, req, active=""):
             links = ('<a href="/owner">Dashboard</a>'
                      '<a href="/owner/properties">Properties</a>'
                      '<a href="/owner/leads">Leads</a>'
+                     '<a href="/owner/callbacks">Callbacks</a>'
                      '<a href="/properties">Public Site</a>')
         else:
             links = ('<a href="/properties">Browse</a>'
@@ -138,6 +139,9 @@ def layout(title, body, req, active=""):
         flash += f'<div class="flash ok">{e(req.q("msg"))}</div>'
     if req.q("err"):
         flash += f'<div class="flash err">{e(req.q("err"))}</div>'
+
+    # Floating "Request a callback" button — shown to visitors & customers.
+    callback = "" if (user and user["role"] == "owner") else _callback_widget(req)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -162,8 +166,38 @@ def layout(title, body, req, active=""):
 {body}
 </main>
 <footer class="app-foot">Realtor Vikkas — Land &amp; homes across Rajasthan, Delhi, Gujarat &amp; the Himalayas.</footer>
+{callback}
 </body>
 </html>"""
+
+
+def _callback_widget(req):
+    """A floating 'Request a callback' button + modal, shown on every public page."""
+    return f"""
+<button class="btn btn-brass callback-fab" type="button" onclick="document.getElementById('cbDlg').showModal()">📞 Request a callback</button>
+<dialog id="cbDlg" class="callback-dlg">
+  <form method="post" action="/callback">
+    <h3 style="margin:0 0 4px">Request a callback</h3>
+    <p style="margin:0 0 14px;color:var(--muted);font-size:.9rem">Leave your number — Realtor Vikkas will call you back.</p>
+    <input type="hidden" name="back" value="{e(req.path)}">
+    <label>Name</label><input name="name" required>
+    <label>Phone</label><input name="phone" required placeholder="+91 …">
+    <label>Best time to call</label><input name="preferred" placeholder="e.g. after 6 pm">
+    <label>Note (optional)</label><textarea name="note" placeholder="Looking for a 3BHK in Jaipur…"></textarea>
+    <div class="cb-actions">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('cbDlg').close()">Cancel</button>
+      <button type="submit" class="btn btn-brass btn-sm">Request callback</button>
+    </div>
+  </form>
+</dialog>
+<style>
+  .callback-fab{{position:fixed;right:18px;bottom:18px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.28)}}
+  .callback-dlg{{border:none;border-radius:14px;padding:0;max-width:380px;width:92%}}
+  .callback-dlg::backdrop{{background:rgba(20,15,8,.45)}}
+  .callback-dlg form{{padding:22px}}
+  .callback-dlg label{{display:block;margin:10px 0 4px;font-size:.85rem;font-weight:600}}
+  .cb-actions{{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}}
+</style>"""
 
 
 def prop_card(p, fav_ids=None):
@@ -890,6 +924,69 @@ def owner_lead_status(req, eid):
 
 
 # ---------------------------------------------------------------------------
+# Callback requests
+# ---------------------------------------------------------------------------
+
+def submit_callback(req):
+    name = (req.f("name") or "").strip()
+    phone = (req.f("phone") or "").strip()
+    back = req.f("back") or "/"
+    if not name or not phone:
+        return redirect(back, err="Please give your name and phone so we can call you back.")
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO callbacks (name, phone, preferred, note, property_id, status, created_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (name, phone, req.f("preferred"), req.f("note"), None, "new", now()))
+    conn.commit()
+    conn.close()
+    return redirect(back, msg="Thank you — Realtor Vikkas will call you back shortly.")
+
+
+def owner_callbacks(req):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM callbacks ORDER BY created_at DESC").fetchall()
+    conn.close()
+    trs = ""
+    for c in rows:
+        status_form = (
+            f"<form method='post' action='/owner/callbacks/{c['id']}/status' style='display:flex;gap:0.3rem'>"
+            f"<select name='status' style='padding:0.3rem'>"
+            f"<option value='new'{' selected' if c['status']=='new' else ''}>new</option>"
+            f"<option value='called'{' selected' if c['status']=='called' else ''}>called</option>"
+            f"<option value='done'{' selected' if c['status']=='done' else ''}>done</option>"
+            f"</select><button class='btn btn-ghost btn-sm' type='submit'>Set</button></form>")
+        trs += (
+            f"<tr><td>{e(c['name'])}</td>"
+            f"<td class='tabular'>{e(c['phone'])}</td>"
+            f"<td>{e(c['preferred'] or '—')}</td>"
+            f"<td style='max-width:260px'>{e(c['note'] or '')}</td>"
+            f"<td>{status_form}</td><td class='tabular'>{e(c['created_at'][:10])}</td></tr>")
+    trs = trs or "<tr><td colspan='6' class='empty'>No callback requests yet.</td></tr>"
+    new_n = sum(1 for c in rows if c["status"] == "new")
+    body = f"""
+<p class="eyebrow">Owner panel</p>
+<h1>📞 Callback requests</h1>
+<p class="lead" style="margin-bottom:1.5rem">{len(rows)} request(s) · {new_n} awaiting a call.</p>
+<div class="table-wrap"><table class="data">
+  <thead><tr><th>Name</th><th>Phone</th><th>Best time</th><th>Note</th><th>Status</th><th>Date</th></tr></thead>
+  <tbody>{trs}</tbody>
+</table></div>
+"""
+    return Response(layout("Callbacks", body, req))
+
+
+def owner_callback_status(req, cid):
+    status = req.f("status")
+    if status in ("new", "called", "done"):
+        conn = get_conn()
+        conn.execute("UPDATE callbacks SET status = ? WHERE id = ?", (status, cid))
+        conn.commit()
+        conn.close()
+    return redirect("/owner/callbacks", msg="Callback updated.")
+
+
+# ---------------------------------------------------------------------------
 # Static + errors
 # ---------------------------------------------------------------------------
 
@@ -938,6 +1035,8 @@ def dispatch(req):
         return property_detail(req, _int(path.rsplit("/", 1)[1]))
     if path == "/enquiry" and m == "POST":
         return submit_enquiry(req)
+    if path == "/callback" and m == "POST":
+        return submit_callback(req)
     if path.startswith("/static/") and m == "GET":
         return serve_static(req, path[len("/static/"):])
 
@@ -982,6 +1081,10 @@ def dispatch(req):
         return require_role(req, "owner") or owner_property_delete(req, _int(path.split("/")[3]))
     if path.startswith("/owner/leads/") and path.endswith("/status") and m == "POST":
         return require_role(req, "owner") or owner_lead_status(req, _int(path.split("/")[3]))
+    if path == "/owner/callbacks" and m == "GET":
+        return require_role(req, "owner") or owner_callbacks(req)
+    if path.startswith("/owner/callbacks/") and path.endswith("/status") and m == "POST":
+        return require_role(req, "owner") or owner_callback_status(req, _int(path.split("/")[3]))
 
     return not_found(req)
 

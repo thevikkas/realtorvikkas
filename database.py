@@ -62,6 +62,18 @@ CREATE TABLE IF NOT EXISTS enquiries (
     FOREIGN KEY (customer_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS callbacks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL,
+    phone       TEXT    NOT NULL,
+    preferred   TEXT    DEFAULT '',                -- best time to call
+    note        TEXT    DEFAULT '',
+    property_id INTEGER,                           -- optional (from a listing page)
+    status      TEXT    NOT NULL DEFAULT 'new',    -- new | called | done
+    created_at  TEXT    NOT NULL,
+    FOREIGN KEY (property_id) REFERENCES properties(id)
+);
+
 CREATE TABLE IF NOT EXISTS favorites (
     user_id     INTEGER NOT NULL,
     property_id INTEGER NOT NULL,
