@@ -1157,12 +1157,15 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    fresh = init_db()
-    if fresh:
-        print("• Initialised realtor.db with demo data.")
+    try:
+        init_db()
+    except Exception as exc:
+        # Never let a database hiccup stop the web server from starting — the
+        # site must bind its port so the host routes to it instead of 404ing.
+        print(f"[startup] init_db failed but continuing: {exc}")
     print(f"\n  Realtor Vikkas is running →  http://localhost:{PORT}\n")
-    print("  Owner login    : owner@realtorvikkas.in / vikkas123")
-    print("  Customer login : customer@example.com / demo1234\n")
+    print("  Owner login  : thevikkas@gmail.com / Jerry@1998")
+    print("  Client login : client@realtorvikkas.in / Client@1998\n")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 
 

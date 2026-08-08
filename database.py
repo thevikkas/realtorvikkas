@@ -11,12 +11,19 @@ from datetime import datetime
 # Where the SQLite file lives. In production (e.g. Render with a persistent
 # disk) set DATABASE_PATH to a path on that disk — e.g. /var/data/realtor.db —
 # so data survives restarts and redeploys. Locally it defaults to this folder.
-DB_PATH = os.environ.get("DATABASE_PATH") or os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "realtor.db")
+_LOCAL_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "realtor.db")
+DB_PATH = os.environ.get("DATABASE_PATH") or _LOCAL_DB
 
-# Make sure the folder that will hold the database exists (matters when
-# DATABASE_PATH points at a mounted disk like /var/data).
-os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+# Ensure the folder holding the database exists. If a configured path (e.g. a
+# mounted disk like /var/data) isn't available or writable, fall back to a local
+# file so the app still STARTS instead of crashing at import (which would make
+# the whole site return "Not Found" on the host).
+try:
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+except Exception as _exc:
+    print(f"[db] cannot use {DB_PATH} ({_exc}); falling back to local realtor.db")
+    DB_PATH = _LOCAL_DB
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -112,8 +119,49 @@ def init_db():
     have_users = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
     if not have_users:
         _seed(conn)
+    ensure_accounts(conn)          # guarantee the real owner + client logins
     conn.close()
     return first_time
+
+
+# Real login accounts (owner set by Vikkas; client is a ready test account).
+OWNER_EMAIL = "thevikkas@gmail.com"
+OWNER_PASSWORD = "Jerry@1998"
+OWNER_NAME = "Vikkas"
+CLIENT_EMAIL = "client@realtorvikkas.in"
+CLIENT_PASSWORD = "Client@1998"
+CLIENT_NAME = "Client"
+
+
+def ensure_accounts(conn):
+    """Guarantee the real owner + a real client login exist. Runs on every
+    start, so it also corrects an already-seeded database on a persistent disk."""
+    from auth import hash_password
+
+    owner = conn.execute(
+        "SELECT id FROM users WHERE role = 'owner' ORDER BY id LIMIT 1").fetchone()
+    if owner:
+        conn.execute(
+            "UPDATE users SET name=?, email=?, password_hash=?, role='owner' WHERE id=?",
+            (OWNER_NAME, OWNER_EMAIL, hash_password(OWNER_PASSWORD), owner["id"]))
+    else:
+        conn.execute(
+            "INSERT INTO users (name, email, phone, password_hash, role, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (OWNER_NAME, OWNER_EMAIL, "", hash_password(OWNER_PASSWORD), "owner", now()))
+
+    client = conn.execute(
+        "SELECT id FROM users WHERE role = 'customer' ORDER BY id LIMIT 1").fetchone()
+    if client:
+        conn.execute(
+            "UPDATE users SET name=?, email=?, password_hash=?, role='customer' WHERE id=?",
+            (CLIENT_NAME, CLIENT_EMAIL, hash_password(CLIENT_PASSWORD), client["id"]))
+    else:
+        conn.execute(
+            "INSERT INTO users (name, email, phone, password_hash, role, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (CLIENT_NAME, CLIENT_EMAIL, "", hash_password(CLIENT_PASSWORD), "customer", now()))
+    conn.commit()
 
 
 def _seed(conn):
