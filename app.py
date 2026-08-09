@@ -10,6 +10,7 @@ import html
 import os
 import re
 import urllib.parse
+import urllib.request
 from http import cookies as http_cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -923,9 +924,34 @@ def owner_lead_status(req, eid):
 # Callback requests
 # ---------------------------------------------------------------------------
 
+def _notify_owner(name, phone, preferred, note):
+    """🔔 Instantly alert the owner on Telegram about a new callback request.
+    Needs env var TELEGRAM_TOKEN (secret); OWNER_CHAT_ID defaults to Vikkas."""
+    token = os.environ.get("TELEGRAM_TOKEN")
+    chat_id = os.environ.get("OWNER_CHAT_ID", "8753045724")
+    if not token:
+        return  # alerts stay off until the bot token is configured on the host
+    lines = ["📞 New callback request — realtorvikkas.com", "",
+             f"👤 {name}", f"📱 {phone}"]
+    if preferred:
+        lines.append(f"🕐 Best time: {preferred}")
+    if note:
+        lines.append(f"📝 {note}")
+    lines.append("\n(Reply fast — the first agent to call usually wins the deal!)")
+    try:
+        data = urllib.parse.urlencode({"chat_id": chat_id, "text": "\n".join(lines)}).encode()
+        urllib.request.urlopen(
+            urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data),
+            timeout=10)
+    except Exception as ex:
+        print(f"[notify] telegram alert failed: {ex}")
+
+
 def submit_callback(req):
     name = (req.f("name") or "").strip()
     phone = (req.f("phone") or "").strip()
+    preferred = req.f("preferred")
+    note = req.f("note")
     back = req.f("back") or "/"
     if not name or not phone:
         return redirect(back, err="Please give your name and phone so we can call you back.")
@@ -933,9 +959,10 @@ def submit_callback(req):
     conn.execute(
         "INSERT INTO callbacks (name, phone, preferred, note, property_id, status, created_at) "
         "VALUES (?,?,?,?,?,?,?)",
-        (name, phone, req.f("preferred"), req.f("note"), None, "new", now()))
+        (name, phone, preferred, note, None, "new", now()))
     conn.commit()
     conn.close()
+    _notify_owner(name, phone, preferred, note)     # 🔔 instant Telegram alert
     return redirect(back, msg="Thank you — Realtor Vikkas will call you back shortly.")
 
 
