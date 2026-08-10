@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS properties (
     description TEXT    DEFAULT '',
     status      TEXT    NOT NULL DEFAULT 'available', -- available | sold | rented
     featured    INTEGER NOT NULL DEFAULT 0,
+    photos_url  TEXT    DEFAULT '',
     owner_id    INTEGER,
     created_at  TEXT    NOT NULL,
     FOREIGN KEY (owner_id) REFERENCES users(id)
@@ -114,6 +115,12 @@ def init_db():
     conn = get_conn()
     conn.executescript(SCHEMA)
     conn.commit()
+
+    # migration: databases created before Excel-sync lack the photos_url column
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+    if "photos_url" not in cols:
+        conn.execute("ALTER TABLE properties ADD COLUMN photos_url TEXT DEFAULT ''")
+        conn.commit()
 
     # Seed only when there are no users yet, so re-runs don't duplicate data.
     have_users = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
