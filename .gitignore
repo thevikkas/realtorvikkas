@@ -2,3 +2,5 @@ realtor.db
 __pycache__/
 *.pyc
 .DS_Store
+listings/*.xlsx
+realtor.db.bak*

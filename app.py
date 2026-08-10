@@ -7,6 +7,7 @@ Public site + customer panel + owner (admin) panel, backed by SQLite.
 """
 
 import html
+import json
 import os
 import re
 import urllib.parse
@@ -20,6 +21,9 @@ from database import get_conn, init_db, now
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "static")
 PORT = int(os.environ.get("PORT") or 10000)   # Render routes to $PORT (default 10000)
+# Secret for the Excel→website sync endpoint. Set a strong value on Render (env
+# var SYNC_KEY); the fallback lets it work locally for testing.
+SYNC_KEY = os.environ.get("SYNC_KEY") or "vikkas-jaipur-8753"
 
 CITIES = ["Jaipur", "Udaipur", "Jodhpur", "Delhi NCR", "Ahmedabad",
           "Gandhinagar", "Shimla", "Manali"]
@@ -247,7 +251,7 @@ def list_properties(req):
     listing = req.q("listing")
     kw = req.q("q")
     conn = get_conn()
-    sql = "SELECT * FROM properties WHERE 1=1"
+    sql = "SELECT * FROM properties WHERE status != 'hidden'"
     args = []
     if city:
         sql += " AND city = ?"; args.append(city)
@@ -292,7 +296,7 @@ def list_properties(req):
 def property_detail(req, pid):
     conn = get_conn()
     p = conn.execute("SELECT * FROM properties WHERE id = ?", (pid,)).fetchone()
-    if not p:
+    if not p or p["status"] == "hidden":
         conn.close()
         return not_found(req)
     owner = conn.execute("SELECT name, phone, email FROM users WHERE id = ?", (p["owner_id"],)).fetchone()
@@ -1046,6 +1050,71 @@ def require_role(req, role):
 # Routing
 # ---------------------------------------------------------------------------
 
+def sync_listings(req):
+    """Excel → website sync. Upserts the posted properties (the Jaipur 'Live'
+    rows from the control sheet) and hides every other property, so the live
+    site matches the sheet. Auth: form field 'key' must equal SYNC_KEY;
+    form field 'payload' is a JSON list of property dicts."""
+    if req.f("key") != SYNC_KEY:
+        return Response(json.dumps({"ok": False, "error": "unauthorized"}),
+                        status=401, content_type="application/json")
+    try:
+        items = json.loads(req.f("payload") or "[]")
+        assert isinstance(items, list)
+    except Exception as ex:  # noqa: BLE001
+        return Response(json.dumps({"ok": False, "error": f"bad payload: {ex}"}),
+                        status=400, content_type="application/json")
+
+    conn = get_conn()
+    owner = conn.execute("SELECT id FROM users WHERE role='owner' ORDER BY id LIMIT 1").fetchone()
+    owner_id = owner["id"] if owner else None
+    live_titles, added, updated = [], 0, 0
+    for it in items:
+        title = str(it.get("title") or "").strip()
+        if not title:
+            continue
+        live_titles.append(title)
+        city = str(it.get("city") or "Jaipur").strip()
+        locality = str(it.get("locality") or "").strip()
+        ptype = str(it.get("ptype") or "Flat").strip().title()
+        listing = str(it.get("listing") or "buy").strip().lower()
+        photos = str(it.get("photos_url") or "").strip()
+        try:
+            price = int(float(it.get("price") or 0))
+        except (TypeError, ValueError):
+            price = 0
+        row = conn.execute("SELECT id FROM properties WHERE title = ?", (title,)).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE properties SET ptype=?, city=?, locality=?, price=?, "
+                "photos_url=?, status='available' WHERE id=?",
+                (ptype, city, locality, price, photos, row["id"]))
+            updated += 1
+        else:
+            conn.execute(
+                "INSERT INTO properties (title, ptype, listing, city, locality, price, "
+                "area_sqft, bedrooms, bathrooms, description, status, featured, owner_id, "
+                "photos_url, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (title, ptype, listing, city, locality, price, 0, 0, 0, "",
+                 "available", 0, owner_id, photos, now()))
+            added += 1
+
+    if live_titles:
+        ph = ",".join("?" * len(live_titles))
+        hidden = conn.execute(
+            f"UPDATE properties SET status='hidden' WHERE title NOT IN ({ph})",
+            live_titles).rowcount
+    else:
+        hidden = 0
+    conn.commit()
+    live = conn.execute(
+        "SELECT COUNT(*) c FROM properties WHERE status != 'hidden'").fetchone()["c"]
+    conn.close()
+    return Response(json.dumps({"ok": True, "added": added, "updated": updated,
+                                "hidden": hidden, "live": live}),
+                    content_type="application/json")
+
+
 def dispatch(req):
     m, path = req.method, req.path
 
@@ -1060,6 +1129,8 @@ def dispatch(req):
         return submit_enquiry(req)
     if path == "/callback" and m == "POST":
         return submit_callback(req)
+    if path == "/api/sync-listings" and m == "POST":
+        return sync_listings(req)
     if path.startswith("/static/") and m == "GET":
         return serve_static(req, path[len("/static/"):])
 
