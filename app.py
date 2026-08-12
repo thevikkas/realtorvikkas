@@ -6,10 +6,13 @@ Standard library only. Run:  python3 app.py   then open http://localhost:8000
 Public site + customer panel + owner (admin) panel, backed by SQLite.
 """
 
+import hashlib
+import hmac
 import html
 import json
 import os
 import re
+import time
 import urllib.parse
 import urllib.request
 from http import cookies as http_cookies
@@ -358,8 +361,10 @@ def submit_enquiry(req):
         "VALUES (?,?,?,?,?,?,?,?)",
         (pid, req.user["id"] if req.user else None, req.f("name"), req.f("email"),
          req.f("phone"), req.f("message"), "new", now()))
+    prop = conn.execute("SELECT title FROM properties WHERE id = ?", (pid,)).fetchone()
     conn.commit()
     conn.close()
+    _save_lead(req.f("name"), req.f("phone"), prop["title"] if prop else "", req.f("message"))
     return redirect(f"/property/{pid}", msg="Thank you — your enquiry has been sent to Realtor Vikkas.")
 
 
@@ -966,6 +971,7 @@ def submit_callback(req):
         (name, phone, preferred, note, None, "new", now()))
     conn.commit()
     conn.close()
+    _save_lead(name, phone, "", note or (f"Callback — best time: {preferred}" if preferred else "Callback request"))
     _notify_owner(name, phone, preferred, note)     # 🔔 instant Telegram alert
     return redirect(back, msg="Thank you — Realtor Vikkas will call you back shortly.")
 
@@ -1011,6 +1017,126 @@ def owner_callback_status(req, cid):
         conn.commit()
         conn.close()
     return redirect("/owner/callbacks", msg="Callback updated.")
+
+
+# ---------------------------------------------------------------------------
+# Leads CRM + simple admin  (statuses: New | Contacted | Visited | Closed)
+# ---------------------------------------------------------------------------
+
+LEAD_STATUSES = ["New", "Contacted", "Visited", "Closed"]
+ADMIN_USER = os.environ.get("ADMIN_USER") or "Vikkas@2026"
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD") or "Vik@1998"
+_ADMIN_SECRET = (os.environ.get("SECRET_KEY") or ("realtor-admin-" + ADMIN_PASSWORD)).encode()
+
+
+def _save_lead(name, phone, prop, message):
+    """Record every inquiry/callback in the unified leads CRM. Best-effort:
+    wrapped so a CRM hiccup can never break the existing enquiry/callback flow."""
+    try:
+        conn = get_conn()
+        conn.execute(
+            "INSERT INTO leads (name, phone, property, message, status, created) "
+            "VALUES (?,?,?,?,?,?)",
+            ((name or "").strip(), (phone or "").strip(), (prop or "").strip(),
+             (message or "").strip(), "New", now()))
+        conn.commit()
+        conn.close()
+    except Exception as ex:  # noqa: BLE001 — never let CRM break the main flow
+        print(f"[leads] could not save lead: {ex}")
+
+
+def _admin_token(days=7):
+    exp = int(time.time()) + days * 86400
+    sig = hmac.new(_ADMIN_SECRET, f"admin.{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{exp}.{sig}"
+
+
+def _admin_ok(req):
+    try:
+        exp, sig = req.cookies.get("admin", "").rsplit(".", 1)
+        if int(exp) < int(time.time()):
+            return False
+        good = hmac.new(_ADMIN_SECRET, f"admin.{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+        return hmac.compare_digest(sig, good)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def admin_login(req):
+    if req.method == "POST":
+        if req.f("username") == ADMIN_USER and req.f("password") == ADMIN_PASSWORD:
+            return redirect("/admin/leads").set_cookie("admin", _admin_token(), max_age=7 * 86400)
+        return redirect("/admin/login", err="Wrong username or password.")
+    err = req.q("err")
+    note = f'<p class="lead" style="color:#c0392b">{e(err)}</p>' if err else ""
+    body = f"""
+<div style="max-width:380px;margin:3rem auto">
+  <p class="eyebrow">Staff only</p>
+  <h1>Admin sign in</h1>
+  <p class="lead" style="margin-bottom:1.2rem">Sign in to the Leads CRM.</p>
+  {note}
+  <form method="post" action="/admin/login" class="card" style="padding:1.5rem">
+    <div style="margin-bottom:0.8rem"><label>Username</label><input name="username" required autofocus></div>
+    <div style="margin-bottom:0.8rem"><label>Password</label><input name="password" type="password" required></div>
+    <button class="btn btn-brass" type="submit" style="width:100%">Sign in</button>
+  </form>
+</div>"""
+    return Response(layout("Admin sign in", body, req))
+
+
+def admin_logout(req):
+    return redirect("/admin/login", msg="Signed out.").set_cookie("admin", "", delete=True)
+
+
+def admin_leads(req):
+    if not _admin_ok(req):
+        return redirect("/admin/login")
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM leads ORDER BY id DESC").fetchall()
+    conn.close()
+    trs = ""
+    for l in rows:
+        opts = "".join(
+            f"<option value='{s}'{' selected' if l['status'] == s else ''}>{s}</option>"
+            for s in LEAD_STATUSES)
+        status_form = (
+            f"<form method='post' action='/admin/leads/{l['id']}/status' style='display:flex;gap:0.3rem'>"
+            f"<select name='status' style='padding:0.3rem'>{opts}</select>"
+            f"<button class='btn btn-ghost btn-sm' type='submit'>Set</button></form>")
+        when = (l["created"] or "").replace("T", " ")[:16]
+        trs += (
+            f"<tr><td>{e(l['name'] or '—')}</td>"
+            f"<td class='tabular'>{e(l['phone'] or '—')}</td>"
+            f"<td>{e(l['property'] or '—')}</td>"
+            f"<td style='max-width:280px'>{e(l['message'] or '')}</td>"
+            f"<td>{status_form}</td>"
+            f"<td class='tabular'>{e(when)}</td></tr>")
+    trs = trs or "<tr><td colspan='6' class='empty'>No leads yet.</td></tr>"
+    new_n = sum(1 for l in rows if l["status"] == "New")
+    body = f"""
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+  <div><p class="eyebrow">Admin</p><h1>📇 Leads CRM</h1></div>
+  <a class="btn btn-ghost btn-sm" href="/admin/logout">Log out</a>
+</div>
+<p class="lead" style="margin-bottom:1.5rem">{len(rows)} lead(s) · {new_n} new · latest first.</p>
+<div class="table-wrap"><table class="data">
+  <thead><tr><th>Name</th><th>Phone</th><th>Property</th><th>Message</th><th>Status</th><th>Date</th></tr></thead>
+  <tbody>{trs}</tbody>
+</table></div>
+"""
+    return Response(layout("Leads · Admin", body, req))
+
+
+def admin_lead_status(req, lead_id):
+    if not _admin_ok(req):
+        return redirect("/admin/login")
+    st = req.f("status")
+    if st in LEAD_STATUSES:
+        conn = get_conn()
+        conn.execute("UPDATE leads SET status = ? WHERE id = ?", (st, lead_id))
+        conn.commit()
+        conn.close()
+    return redirect("/admin/leads", msg="Lead updated.")
 
 
 # ---------------------------------------------------------------------------
@@ -1179,6 +1305,16 @@ def dispatch(req):
         return require_role(req, "owner") or owner_callbacks(req)
     if path.startswith("/owner/callbacks/") and path.endswith("/status") and m == "POST":
         return require_role(req, "owner") or owner_callback_status(req, _int(path.split("/")[3]))
+
+    # --- Leads CRM (simple password admin) ---
+    if path == "/admin/login":
+        return admin_login(req)
+    if path == "/admin/logout":
+        return admin_logout(req)
+    if path == "/admin/leads" and m == "GET":
+        return admin_leads(req)
+    if path.startswith("/admin/leads/") and path.endswith("/status") and m == "POST":
+        return admin_lead_status(req, _int(path.split("/")[3]))
 
     return not_found(req)
 

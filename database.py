@@ -95,6 +95,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS leads (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT    DEFAULT '',
+    phone    TEXT    DEFAULT '',
+    property TEXT    DEFAULT '',
+    message  TEXT    DEFAULT '',
+    status   TEXT    NOT NULL DEFAULT 'New',   -- New | Contacted | Visited | Closed
+    created  TEXT    NOT NULL
+);
 """
 
 
