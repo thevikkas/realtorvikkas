@@ -972,7 +972,6 @@ def submit_callback(req):
     conn.commit()
     conn.close()
     _save_lead(name, phone, "", note or (f"Callback — best time: {preferred}" if preferred else "Callback request"))
-    _notify_owner(name, phone, preferred, note)     # 🔔 instant Telegram alert
     return redirect(back, msg="Thank you — Realtor Vikkas will call you back shortly.")
 
 
@@ -1029,9 +1028,31 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD") or "Vik@1998"
 _ADMIN_SECRET = (os.environ.get("SECRET_KEY") or ("realtor-admin-" + ADMIN_PASSWORD)).encode()
 
 
+def _notify_lead(name, phone, prop, message):
+    """🔔 Telegram alert to the owner for every new lead (enquiry or callback)."""
+    token = os.environ.get("TELEGRAM_TOKEN")
+    chat_id = os.environ.get("OWNER_CHAT_ID", "8753045724")
+    if not token:
+        return
+    lines = ["🔔 New lead — realtorvikkas.com", "", f"👤 {name or '—'}", f"📱 {phone or '—'}"]
+    if prop:
+        lines.append(f"🏠 {prop}")
+    if message:
+        lines.append(f"📝 {message}")
+    lines.append("\nSee all → realtorvikkas.com/admin/leads")
+    try:
+        data = urllib.parse.urlencode({"chat_id": chat_id, "text": "\n".join(lines)}).encode()
+        urllib.request.urlopen(
+            urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data),
+            timeout=10)
+    except Exception as ex:  # noqa: BLE001
+        print(f"[notify] telegram lead alert failed: {ex}")
+
+
 def _save_lead(name, phone, prop, message):
-    """Record every inquiry/callback in the unified leads CRM. Best-effort:
-    wrapped so a CRM hiccup can never break the existing enquiry/callback flow."""
+    """Record every inquiry/callback in the unified leads CRM + alert on Telegram.
+    Best-effort: wrapped so a CRM hiccup can never break the enquiry/callback flow."""
+    ok = False
     try:
         conn = get_conn()
         conn.execute(
@@ -1041,8 +1062,11 @@ def _save_lead(name, phone, prop, message):
              (message or "").strip(), "New", now()))
         conn.commit()
         conn.close()
+        ok = True
     except Exception as ex:  # noqa: BLE001 — never let CRM break the main flow
         print(f"[leads] could not save lead: {ex}")
+    if ok:
+        _notify_lead(name, phone, prop, message)
 
 
 def _admin_token(days=7):
@@ -1109,7 +1133,11 @@ def admin_leads(req):
             f"<td class='tabular'>{e(l['phone'] or '—')}</td>"
             f"<td>{e(l['property'] or '—')}</td>"
             f"<td style='max-width:280px'>{e(l['message'] or '')}</td>"
-            f"<td>{status_form}</td>"
+            f"<td><div style='display:flex;gap:0.3rem;align-items:center'>{status_form}"
+            f"<form method='post' action='/admin/leads/{l['id']}/delete' "
+            f"onsubmit=\"return confirm('Delete this lead permanently?')\">"
+            f"<button class='btn btn-ghost btn-sm' type='submit' title='Delete' "
+            f"style='color:#c0392b'>✕</button></form></div></td>"
             f"<td class='tabular'>{e(when)}</td></tr>")
     trs = trs or "<tr><td colspan='6' class='empty'>No leads yet.</td></tr>"
     new_n = sum(1 for l in rows if l["status"] == "New")
@@ -1137,6 +1165,31 @@ def admin_lead_status(req, lead_id):
         conn.commit()
         conn.close()
     return redirect("/admin/leads", msg="Lead updated.")
+
+
+def admin_lead_delete(req, lead_id):
+    if not _admin_ok(req):
+        return redirect("/admin/login")
+    conn = get_conn()
+    conn.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
+    conn.commit()
+    conn.close()
+    return redirect("/admin/leads", msg="Lead deleted.")
+
+
+def api_leads(req):
+    """JSON feed of recent leads for JARVIS. Auth: ?key= must equal SYNC_KEY."""
+    if req.q("key") != SYNC_KEY:
+        return Response(json.dumps({"ok": False, "error": "unauthorized"}),
+                        status=401, content_type="application/json")
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, name, phone, property, message, status, created "
+        "FROM leads ORDER BY id DESC LIMIT 30").fetchall()
+    conn.close()
+    leads = [dict(r) for r in rows]
+    return Response(json.dumps({"ok": True, "count": len(leads), "leads": leads}),
+                    content_type="application/json")
 
 
 # ---------------------------------------------------------------------------
@@ -1315,6 +1368,10 @@ def dispatch(req):
         return admin_leads(req)
     if path.startswith("/admin/leads/") and path.endswith("/status") and m == "POST":
         return admin_lead_status(req, _int(path.split("/")[3]))
+    if path.startswith("/admin/leads/") and path.endswith("/delete") and m == "POST":
+        return admin_lead_delete(req, _int(path.split("/")[3]))
+    if path == "/api/leads" and m == "GET":
+        return api_leads(req)
 
     return not_found(req)
 
