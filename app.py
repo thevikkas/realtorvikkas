@@ -28,6 +28,13 @@ PORT = int(os.environ.get("PORT") or 10000)   # Render routes to $PORT (default 
 # var SYNC_KEY); the fallback lets it work locally for testing.
 SYNC_KEY = os.environ.get("SYNC_KEY") or "vikkas-jaipur-8753"
 
+# Canonical base URL for SEO (canonical links, Open Graph, sitemap). Apex
+# redirects to www, so www is the canonical host.
+SITE_BASE = (os.environ.get("SITE_BASE") or "https://www.realtorvikkas.com").rstrip("/")
+DEFAULT_DESC = ("Realtor Vikkas — buy, sell and rent flats, plots and villas in Jaipur. "
+                "Verified property listings across Vaishali Nagar, Mansarovar, Jagatpura, "
+                "C-Scheme, Ajmer Road and more, with owner contacts and site visits.")
+
 CITIES = ["Jaipur", "Udaipur", "Jodhpur", "Delhi NCR", "Ahmedabad",
           "Gandhinagar", "Shimla", "Manali"]
 PTYPES = ["Villa", "Plot", "Flat", "Townhouse", "Commercial"]
@@ -122,7 +129,8 @@ def redirect(location, msg=None, err=None, cookie=None):
 # Layout / templates
 # ---------------------------------------------------------------------------
 
-def layout(title, body, req, active=""):
+def layout(title, body, req, active="", description=None, canonical=None,
+           head_extra="", noindex=False, og_image=None):
     user = req.user
     if user:
         if user["role"] == "owner":
@@ -151,13 +159,32 @@ def layout(title, body, req, active=""):
     # Floating "Request a callback" button — shown to visitors & customers.
     callback = "" if (user and user["role"] == "owner") else _callback_widget(req)
 
+    # --- SEO head ---
+    full_title = f"{title} — Realtor Vikkas"
+    desc = e(description or DEFAULT_DESC)
+    canon = e(canonical or (SITE_BASE + (req.path or "/")))
+    _private = req.path.startswith(("/owner", "/account", "/admin")) or \
+        req.path in ("/login", "/register", "/logout")
+    robots = "noindex,nofollow" if (noindex or _private) else "index,follow"
+    og_img = f'\n<meta property="og:image" content="{e(og_image)}">' if og_image else ""
+
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{e(title)} — Realtor Vikkas</title>
+<title>{e(full_title)}</title>
+<meta name="description" content="{desc}">
+<meta name="robots" content="{robots}">
+<link rel="canonical" href="{canon}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Realtor Vikkas">
+<meta property="og:title" content="{e(full_title)}">
+<meta property="og:description" content="{desc}">
+<meta property="og:url" content="{canon}">{og_img}
+<meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="/static/app.css">
+{head_extra}
 </head>
 <body>
 <header class="topbar">
@@ -220,10 +247,18 @@ def prop_card(p, fav_ids=None):
     if p["area_sqft"]:
         specs.append(f'{p["area_sqft"]} sqft')
     spec_txt = " · ".join(specs) if specs else p["ptype"]
+    alt = f'{e(p["ptype"])} in {e(p["locality"] or p["city"])}, {e(p["city"])}'
+    if p["photos_url"]:
+        media = (f'<img src="{e(p["photos_url"])}" alt="{alt}" loading="lazy" '
+                 f'style="width:100%;height:100%;object-fit:cover">')
+    else:
+        media = ('<svg width="52" height="40" viewBox="0 0 52 40" fill="none" stroke="currentColor" '
+                 'stroke-width="1.6" aria-hidden="true" focusable="false"><path d="M6 24 18 10l12 14"/>'
+                 '<rect x="10" y="24" width="16" height="12"/><path d="M30 36V18l8-6 8 6v18"/></svg>')
     return f"""<article class="prop-card">
   <div class="prop-vignette">
     <span class="listing-badge">For {e(p["listing"])}</span>
-    <svg width="52" height="40" viewBox="0 0 52 40" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 24 18 10l12 14"/><rect x="10" y="24" width="16" height="12"/><path d="M30 36V18l8-6 8 6v18"/></svg>
+    {media}
   </div>
   <div class="prop-body">
     <span class="prop-tag">{e(p["ptype"])} · {e(p["status"])}</span>
@@ -278,9 +313,9 @@ def list_properties(req):
         '<div class="empty">No listings match those filters yet.</div>'
 
     body = f"""
-<p class="eyebrow">The Register</p>
-<h1>Browse the listings</h1>
-<p class="lead">{len(rows)} propert{"y" if len(rows) == 1 else "ies"} on the register across Rajasthan, Delhi NCR, Gujarat and the Himalayas.</p>
+<p class="eyebrow">The Register · Jaipur</p>
+<h1>Property in Jaipur — flats, plots &amp; villas</h1>
+<p class="lead">{len(rows)} verified propert{"y" if len(rows) == 1 else "ies"} in Jaipur — Vaishali Nagar, Mansarovar, Jagatpura, C-Scheme, Ajmer Road and more.</p>
 
 <form class="filters" method="get" action="/properties">
   <div class="field"><label>City</label><select name="city"><option value="">All cities</option>{opts(CITIES, city)}</select></div>
@@ -293,7 +328,12 @@ def list_properties(req):
 
 <div class="prop-grid">{cards}</div>
 """
-    return Response(layout("Browse", body, req))
+    seo_title = "Properties in Jaipur — Flats, Plots & Villas for Sale & Rent"
+    seo_desc = ("Browse verified property listings in Jaipur — flats, plots and villas for "
+                "sale and rent in Vaishali Nagar, Mansarovar, Jagatpura, C-Scheme, Ajmer Road "
+                "and more. Owner contacts and easy site visits with Realtor Vikkas.")
+    return Response(layout(seo_title, body, req, description=seo_desc,
+                           canonical=SITE_BASE + "/properties"))
 
 
 def property_detail(req, pid):
@@ -309,12 +349,21 @@ def property_detail(req, pid):
     prefill_email = e(req.user["email"]) if req.user else ""
     prefill_phone = e(req.user["phone"]) if req.user else ""
 
+    d_alt = f'{e(p["ptype"])} in {e(p["locality"] or p["city"])}, {e(p["city"])}'
+    if p["photos_url"]:
+        banner_media = (f'<img src="{e(p["photos_url"])}" alt="{d_alt}" loading="lazy" '
+                        f'style="max-width:100%;border-radius:12px">')
+    else:
+        banner_media = ('<svg width="90" height="70" viewBox="0 0 52 40" fill="none" stroke="currentColor" '
+                        'stroke-width="1.4" aria-hidden="true" focusable="false"><path d="M6 24 18 10l12 14"/>'
+                        '<rect x="10" y="24" width="16" height="12"/><path d="M30 36V18l8-6 8 6v18"/></svg>')
+
     body = f"""
 <p><a class="muted-link" href="/properties">← Back to listings</a></p>
 <div class="detail-head">
   <div>
     <div class="detail-banner">
-      <svg width="90" height="70" viewBox="0 0 52 40" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 24 18 10l12 14"/><rect x="10" y="24" width="16" height="12"/><path d="M30 36V18l8-6 8 6v18"/></svg>
+      {banner_media}
     </div>
     <p class="eyebrow" style="margin-top:1.2rem">{e(p["ptype"])} · For {e(p["listing"])}</p>
     <h1>{e(p["title"])}</h1>
@@ -346,7 +395,53 @@ def property_detail(req, pid):
   </aside>
 </div>
 """
-    return Response(layout(p["title"], body, req))
+    # --- dynamic SEO title + description ---
+    bhk = f"{p['bedrooms']}BHK " if p["bedrooms"] else ""
+    loc = p["locality"] or p["city"]
+    seo_title = f"{bhk}{p['ptype']} in {loc}, {p['city']} — {money(p['price'])}"
+    bits = []
+    if p["bedrooms"]:
+        bits.append(f"{p['bedrooms']} BHK")
+    if p["area_sqft"]:
+        bits.append(f"{p['area_sqft']} sqft")
+    spec = ", ".join(bits)
+    rent = "/month" if p["listing"] == "rent" else ""
+    seo_desc = (f"{p['ptype']} for {p['listing']} in {loc}, {p['city']} at {money(p['price'])}{rent}."
+                + (f" {spec}." if spec else "")
+                + (f" {p['description'][:140].strip()}" if p["description"] else "")).strip()
+
+    # --- Schema.org RealEstateListing (JSON-LD) ---
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "RealEstateListing",
+        "name": seo_title,
+        "url": SITE_BASE + f"/property/{p['id']}",
+        "datePosted": p["created_at"],
+        "description": p["description"] or seo_desc,
+        "address": {
+            "@type": "PostalAddress",
+            "streetAddress": p["locality"] or "",
+            "addressLocality": p["city"],
+            "addressRegion": "Rajasthan",
+            "addressCountry": "IN",
+        },
+        "offers": {
+            "@type": "Offer",
+            "price": p["price"],
+            "priceCurrency": "INR",
+            "availability": ("https://schema.org/InStock" if p["status"] == "available"
+                             else "https://schema.org/SoldOut"),
+        },
+    }
+    if p["bedrooms"]:
+        ld["numberOfBedrooms"] = p["bedrooms"]
+    if p["area_sqft"]:
+        ld["floorSize"] = {"@type": "QuantitativeValue", "value": p["area_sqft"], "unitCode": "FTK"}
+    jsonld = ('<script type="application/ld+json">'
+              + json.dumps(ld).replace("</", "<\\/") + "</script>")
+
+    return Response(layout(seo_title, body, req, description=seo_desc,
+                           canonical=SITE_BASE + f"/property/{p['id']}", head_extra=jsonld))
 
 
 def submit_enquiry(req):
@@ -1193,6 +1288,45 @@ def api_leads(req):
 
 
 # ---------------------------------------------------------------------------
+# SEO: sitemap.xml + robots.txt
+# ---------------------------------------------------------------------------
+
+def sitemap_xml(req):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, created_at FROM properties WHERE status != 'hidden' ORDER BY id").fetchall()
+    conn.close()
+
+    def url(loc, priority, lastmod=None):
+        lm = f"<lastmod>{lastmod}</lastmod>" if lastmod else ""
+        return (f"<url><loc>{loc}</loc>{lm}"
+                f"<changefreq>weekly</changefreq><priority>{priority}</priority></url>")
+
+    parts = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+             url(SITE_BASE + "/", "1.0"),
+             url(SITE_BASE + "/properties", "0.9"),
+             url(SITE_BASE + "/terms", "0.3")]
+    for r in rows:
+        parts.append(url(SITE_BASE + f"/property/{r['id']}", "0.8", (r["created_at"] or "")[:10]))
+    parts.append("</urlset>")
+    return Response("".join(parts), content_type="application/xml; charset=utf-8")
+
+
+def robots_txt(req):
+    txt = ("User-agent: *\n"
+           "Allow: /\n"
+           "Disallow: /owner\n"
+           "Disallow: /account\n"
+           "Disallow: /admin\n"
+           "Disallow: /login\n"
+           "Disallow: /register\n"
+           "Disallow: /api/\n\n"
+           f"Sitemap: {SITE_BASE}/sitemap.xml\n")
+    return Response(txt, content_type="text/plain; charset=utf-8")
+
+
+# ---------------------------------------------------------------------------
 # Static + errors
 # ---------------------------------------------------------------------------
 
@@ -1310,6 +1444,10 @@ def dispatch(req):
         return submit_callback(req)
     if path == "/api/sync-listings" and m == "POST":
         return sync_listings(req)
+    if path == "/sitemap.xml" and m == "GET":
+        return sitemap_xml(req)
+    if path == "/robots.txt" and m == "GET":
+        return robots_txt(req)
     if path.startswith("/static/") and m == "GET":
         return serve_static(req, path[len("/static/"):])
 
