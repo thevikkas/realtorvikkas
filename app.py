@@ -215,6 +215,7 @@ def _callback_widget(req):
     <h3 style="margin:0 0 4px">Request a callback</h3>
     <p style="margin:0 0 14px;color:var(--muted);font-size:.9rem">Leave your number — Realtor Vikkas will call you back.</p>
     <input type="hidden" name="back" value="{e(req.path)}">
+    <input type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute!important;left:-9999px!important;top:-9999px!important;height:1px;width:1px;opacity:0">
     <label>Name</label><input name="name" required>
     <label>Phone</label><input name="phone" required placeholder="+91 …">
     <label>Best time to call</label><input name="preferred" placeholder="e.g. after 6 pm">
@@ -385,6 +386,7 @@ def property_detail(req, pid):
       <p class="lead" style="font-size:0.85rem;margin-bottom:1rem">Send Realtor Vikkas a message and the team will be in touch.</p>
       <form method="post" action="/enquiry">
         <input type="hidden" name="property_id" value="{p["id"]}">
+        <input type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute!important;left:-9999px!important;top:-9999px!important;height:1px;width:1px;opacity:0">
         <div style="margin-bottom:0.8rem"><label>Name</label><input name="name" required value="{prefill_name}"></div>
         <div style="margin-bottom:0.8rem"><label>Email</label><input name="email" type="email" required value="{prefill_email}"></div>
         <div style="margin-bottom:0.8rem"><label>Phone</label><input name="phone" value="{prefill_phone}"></div>
@@ -446,6 +448,8 @@ def property_detail(req, pid):
 
 def submit_enquiry(req):
     pid = req.f("property_id")
+    if _is_spam(req.f("name"), req.f("message"), req.f("website")):
+        return redirect(f"/property/{pid}", msg="Thank you — your enquiry has been sent to Realtor Vikkas.")
     conn = get_conn()
     p = conn.execute("SELECT id FROM properties WHERE id = ?", (pid,)).fetchone()
     if not p:
@@ -1059,6 +1063,8 @@ def submit_callback(req):
     back = req.f("back") or "/"
     if not name or not phone:
         return redirect(back, err="Please give your name and phone so we can call you back.")
+    if _is_spam(name, note, req.f("website")):
+        return redirect(back, msg="Thank you — Realtor Vikkas will call you back shortly.")
     conn = get_conn()
     conn.execute(
         "INSERT INTO callbacks (name, phone, preferred, note, property_id, status, created_at) "
@@ -1142,6 +1148,19 @@ def _notify_lead(name, phone, prop, message):
             timeout=10)
     except Exception as ex:  # noqa: BLE001
         print(f"[notify] telegram lead alert failed: {ex}")
+
+
+def _is_spam(name, message, honeypot=""):
+    """Lightweight spam filter for the public forms — a hidden honeypot field
+    plus a link/HTML check. Real visitors are unaffected (the field is hidden)."""
+    if (honeypot or "").strip():
+        return True
+    blob = (str(name) + " " + str(message)).lower()
+    if "http://" in blob or "https://" in blob or "www." in blob:
+        return True
+    if "<a " in blob or "href=" in blob or "[url" in blob:
+        return True
+    return False
 
 
 def _save_lead(name, phone, prop, message):
