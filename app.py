@@ -317,11 +317,49 @@ def prop_card(p, fav_ids=None):
 # Public routes
 # ---------------------------------------------------------------------------
 
+def _home_ledger_card(p):
+    """Render a live property in the homepage 'ledger card' style."""
+    specs = []
+    if p["bedrooms"]:
+        specs.append(f'{p["bedrooms"]} BHK')
+    if p["area_sqft"]:
+        specs.append(f'{p["area_sqft"]} sq.ft')
+    spec_txt = " · ".join(specs) if specs else p["ptype"]
+    if p["photos_url"]:
+        media = (f'<img src="{e(p["photos_url"])}" alt="{e(p["ptype"])} in {e(p["locality"] or p["city"])}, '
+                 f'{e(p["city"])}" loading="lazy" style="width:100%;height:100%;object-fit:cover">')
+    else:
+        media = ('<svg width="52" height="40" viewBox="0 0 52 40" fill="none" stroke="currentColor" '
+                 'stroke-width="1.6" aria-hidden="true"><path d="M6 24 18 10l12 14"/>'
+                 '<rect x="10" y="24" width="16" height="12"/><path d="M30 36V18l8-6 8 6v18"/></svg>')
+    return f"""<article class="ledger-card reveal">
+          <div class="ledger-vignette">{media}</div>
+          <div class="ledger-body">
+            <span class="ledger-tag">{e(p["ptype"])}</span>
+            <h3><a href="/property/{p["id"]}">{e(p["title"])}</a></h3>
+            <p class="ledger-loc">{e(p["locality"])}{", " if p["locality"] else ""}{e(p["city"])} — Rajasthan</p>
+            <div class="ledger-specs">
+              <span class="price">{money(p["price"])}{"/mo" if p["listing"] == "rent" else ""}</span>
+              <span>{e(spec_txt)}</span>
+            </div>
+          </div>
+        </article>"""
+
+
 def home(req):
-    """Serve the marketing landing page, injecting live featured listings."""
-    path = os.path.join(HERE, "index.html")
-    with open(path, "r", encoding="utf-8") as fh:
-        return Response(fh.read())
+    """Serve the marketing landing page with LIVE featured Jaipur listings injected."""
+    with open(os.path.join(HERE, "index.html"), "r", encoding="utf-8") as fh:
+        html = fh.read()
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM properties WHERE status != 'hidden' AND city = 'Jaipur' "
+        "ORDER BY featured DESC, created_at DESC LIMIT 6").fetchall()
+    conn.close()
+    cards = "".join(_home_ledger_card(p) for p in rows) or \
+        '<p class="lead" style="grid-column:1/-1">Fresh Jaipur listings are on the way.</p>'
+    html = html.replace("<!--LIVE_LISTINGS-->", cards)
+    html = html.replace("<!--FLOAT_ACTIONS-->", _float_actions(req))
+    return Response(html)
 
 
 def list_properties(req):
