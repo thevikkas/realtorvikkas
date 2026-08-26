@@ -35,6 +35,16 @@ DEFAULT_DESC = ("Realtor Vikkas — buy, sell and rent flats, plots and villas i
                 "Verified property listings across Vaishali Nagar, Mansarovar, Jagatpura, "
                 "C-Scheme, Ajmer Road and more, with owner contacts and site visits.")
 
+# Contact for WhatsApp / Call CTAs (override via env in production).
+WHATSAPP = os.environ.get("WHATSAPP") or "919001189003"     # E.164 digits, no '+'
+PHONE = os.environ.get("PHONE") or "+919001189003"
+
+
+def _wa_url(text=""):
+    """Build a WhatsApp click-to-chat link, optionally pre-filled with a message."""
+    base = "https://wa.me/" + WHATSAPP
+    return base + ("?text=" + urllib.parse.quote(text) if text else "")
+
 CITIES = ["Jaipur", "Udaipur", "Jodhpur", "Delhi NCR", "Ahmedabad",
           "Gandhinagar", "Shimla", "Manali"]
 PTYPES = ["Villa", "Plot", "Flat", "Townhouse", "Commercial"]
@@ -158,6 +168,7 @@ def layout(title, body, req, active="", description=None, canonical=None,
 
     # Floating "Request a callback" button — shown to visitors & customers.
     callback = "" if (user and user["role"] == "owner") else _callback_widget(req)
+    floats = "" if (user and user["role"] == "owner") else _float_actions(req)
 
     # --- SEO head ---
     full_title = f"{title} — Realtor Vikkas"
@@ -201,9 +212,32 @@ def layout(title, body, req, active="", description=None, canonical=None,
 {body}
 </main>
 <footer class="app-foot">Realtor Vikkas — Land &amp; homes across Rajasthan, Delhi, Gujarat &amp; the Himalayas.</footer>
+{floats}
 {callback}
 </body>
 </html>"""
+
+
+def _float_actions(req):
+    """Floating WhatsApp + Call buttons for visitors (every public page)."""
+    wa = _wa_url("Hi, I found realtorvikkas.com and would like help with a property in Jaipur.")
+    return f"""
+<div class="fab-stack">
+  <a class="fab wa" href="{wa}" target="_blank" rel="noopener" aria-label="Chat on WhatsApp">
+    <svg viewBox="0 0 24 24" fill="currentColor" width="26" height="26"><path d="M12 2a10 10 0 0 0-8.6 15.05L2 22l5.1-1.33A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.15l-.3-.18-3 .78.8-2.92-.2-.31A8.2 8.2 0 1 1 12 20.2zm4.6-6.15c-.25-.13-1.47-.72-1.7-.8s-.4-.13-.56.13-.64.8-.79.96-.3.2-.55.07a6.7 6.7 0 0 1-2-1.23 7.4 7.4 0 0 1-1.36-1.7c-.14-.24 0-.37.11-.5s.25-.29.37-.43a1.7 1.7 0 0 0 .25-.42.46.46 0 0 0 0-.44c-.06-.13-.56-1.34-.76-1.83s-.4-.42-.56-.42h-.48a.92.92 0 0 0-.67.31 2.8 2.8 0 0 0-.87 2.08 4.86 4.86 0 0 0 1.02 2.58 11.1 11.1 0 0 0 4.25 3.76c.6.26 1.05.42 1.4.53a3.4 3.4 0 0 0 1.55.1 2.53 2.53 0 0 0 1.66-1.17 2.06 2.06 0 0 0 .14-1.17c-.06-.1-.22-.16-.47-.29z"/></svg>
+  </a>
+  <a class="fab call" href="tel:{PHONE}" aria-label="Call us">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z"/></svg>
+  </a>
+</div>
+<style>
+  .fab-stack{{position:fixed;right:18px;bottom:80px;z-index:59;display:flex;flex-direction:column;gap:10px}}
+  .fab{{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(16,26,48,.3);color:#fff;transition:transform .2s}}
+  .fab:hover{{transform:scale(1.09)}}
+  .fab.wa{{background:#25D366}}
+  .fab.call{{background:#1B2A4A}}
+  @media(max-width:600px){{.fab{{width:48px;height:48px}}}}
+</style>"""
 
 
 def _callback_widget(req):
@@ -249,6 +283,7 @@ def prop_card(p, fav_ids=None):
         specs.append(f'{p["area_sqft"]} sqft')
     spec_txt = " · ".join(specs) if specs else p["ptype"]
     alt = f'{e(p["ptype"])} in {e(p["locality"] or p["city"])}, {e(p["city"])}'
+    wa = _wa_url(f'Hi, I am interested in {p["title"]} ({p["locality"] or p["city"]}, {p["city"]}) — {SITE_BASE}/property/{p["id"]}. Please share details.')
     if p["photos_url"]:
         media = (f'<img src="{e(p["photos_url"])}" alt="{alt}" loading="lazy" '
                  f'style="width:100%;height:100%;object-fit:cover">')
@@ -268,6 +303,11 @@ def prop_card(p, fav_ids=None):
     <div class="prop-specs">
       <span class="tabular">{e(spec_txt)}</span>
       <span class="price">{money(p["price"])}{"/mo" if p["listing"] == "rent" else ""} {fav}</span>
+    </div>
+    <div class="prop-actions">
+      <a class="pa-btn view" href="/property/{p["id"]}">View</a>
+      <a class="pa-btn wa" href="{wa}" target="_blank" rel="noopener">WhatsApp</a>
+      <a class="pa-btn call" href="tel:{PHONE}">Call</a>
     </div>
   </div>
 </article>"""
@@ -351,6 +391,10 @@ def property_detail(req, pid):
     prefill_phone = e(req.user["phone"]) if req.user else ""
 
     d_alt = f'{e(p["ptype"])} in {e(p["locality"] or p["city"])}, {e(p["city"])}'
+    _loc = f'{p["locality"] or p["city"]}, {p["city"]}'
+    _url = f'{SITE_BASE}/property/{p["id"]}'
+    wa_detail = _wa_url(f'Hi, I am interested in {p["title"]} ({_loc}) — {_url}. Please share more details.')
+    wa_visit = _wa_url(f'Hi, I would like to schedule a site visit for {p["title"]} ({_loc}) — {_url}.')
     if p["photos_url"]:
         banner_media = (f'<img src="{e(p["photos_url"])}" alt="{d_alt}" loading="lazy" '
                         f'style="max-width:100%;border-radius:12px">')
@@ -376,6 +420,11 @@ def property_detail(req, pid):
       <div><div class="k">Bedrooms</div><div class="v">{e(p["bedrooms"] or "—")}</div></div>
       <div><div class="k">Bathrooms</div><div class="v">{e(p["bathrooms"] or "—")}</div></div>
       <div><div class="k">Listed by</div><div class="v">{e(owner["name"] if owner else "Realtor Vikkas")}</div></div>
+    </div>
+    <div class="detail-actions">
+      <a class="da-btn wa" href="{wa_detail}" target="_blank" rel="noopener">💬 WhatsApp</a>
+      <a class="da-btn call" href="tel:{PHONE}">📞 Call Now</a>
+      <a class="da-btn visit" href="{wa_visit}" target="_blank" rel="noopener">📅 Schedule Site Visit</a>
     </div>
     <p>{e(p["description"])}</p>
   </div>
