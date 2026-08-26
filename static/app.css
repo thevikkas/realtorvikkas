@@ -301,3 +301,22 @@ table.data tr:last-child td { border-bottom: none; }
 .fav-btn { background: none; border: none; cursor: pointer; font-size: 1.1rem; color: var(--brass); }
 
 footer.app-foot { background: var(--indigo-deep); color: #8B96B3; font-size: 0.8rem; padding: 2rem; text-align: center; margin-top: 3rem; }
+
+/* --- WhatsApp / Call CTAs (Phase 1) --- */
+.prop-actions { display: flex; gap: 6px; margin-top: 12px; }
+.pa-btn { flex: 1; text-align: center; font-size: 0.8rem; font-weight: 600; padding: 8px 6px;
+  border-radius: 8px; border: 1px solid var(--rule); color: var(--indigo); text-decoration: none;
+  transition: background .15s, color .15s, border-color .15s; }
+.pa-btn:hover { background: var(--indigo); color: #fff; border-color: var(--indigo); }
+.pa-btn.wa { color: #128C4B; border-color: #bfe6cf; }
+.pa-btn.wa:hover { background: #25D366; color: #fff; border-color: #25D366; }
+.pa-btn.call { color: var(--brass); }
+.pa-btn.call:hover { background: var(--brass); color: #fff; border-color: var(--brass); }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 4px; }
+.da-btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; padding: 12px 20px;
+  border-radius: 10px; text-decoration: none; font-size: 0.95rem; transition: opacity .2s, transform .2s; }
+.da-btn:hover { opacity: .92; transform: translateY(-1px); }
+.da-btn.wa { background: #25D366; color: #fff; }
+.da-btn.call { background: var(--indigo); color: #fff; }
+.da-btn.visit { background: var(--brass); color: #fff; }
+@media (max-width: 520px) { .da-btn { flex: 1; justify-content: center; } }
