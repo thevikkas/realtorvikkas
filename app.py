@@ -49,6 +49,21 @@ CITIES = ["Jaipur", "Udaipur", "Jodhpur", "Delhi NCR", "Ahmedabad",
           "Gandhinagar", "Shimla", "Manali"]
 PTYPES = ["Villa", "Plot", "Flat", "Townhouse", "Commercial"]
 
+# Price bands for the search filter (INR value, label) — used for Min/Max selects.
+PRICE_BANDS = [
+    (1_000_000, "₹10 L"), (2_500_000, "₹25 L"), (5_000_000, "₹50 L"),
+    (7_500_000, "₹75 L"), (10_000_000, "₹1 Cr"), (15_000_000, "₹1.5 Cr"),
+    (20_000_000, "₹2 Cr"), (30_000_000, "₹3 Cr"), (50_000_000, "₹5 Cr"),
+    (100_000_000, "₹10 Cr"),
+]
+# Sort options: key -> (SQL order-by, human label). Insertion order = menu order.
+SORTS = {
+    "new":        ("featured DESC, created_at DESC", "Newest first"),
+    "price_low":  ("price ASC, featured DESC",       "Price: low to high"),
+    "price_high": ("price DESC, featured DESC",      "Price: high to low"),
+    "area":       ("area_sqft DESC, featured DESC",  "Largest area"),
+}
+
 
 # ---------------------------------------------------------------------------
 # Small helpers
@@ -78,6 +93,41 @@ def opts(values, selected=""):
         sel = " selected" if str(v) == str(selected) else ""
         out.append(f'<option value="{e(v)}"{sel}>{e(v)}</option>')
     return "".join(out)
+
+
+def _pos_int(s):
+    """Parse a positive integer from a query string, else None (filter ignored)."""
+    try:
+        v = int(s)
+        return v if v > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _sync_int(v):
+    """For the sync endpoint: int (incl. 0) when a value is present, else None (skip)."""
+    if v is None or v == "":
+        return None
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _price_opts(selected=""):
+    out = []
+    for val, lbl in PRICE_BANDS:
+        sel = " selected" if str(val) == str(selected) else ""
+        out.append(f'<option value="{val}"{sel}>{e(lbl)}</option>')
+    return "".join(out)
+
+
+def _photo_list(photos_url):
+    """Split a photos field into a list of image URLs (comma / newline / pipe separated)."""
+    if not photos_url:
+        return []
+    raw = str(photos_url).replace("\n", ",").replace("|", ",")
+    return [u.strip() for u in raw.split(",") if u.strip().startswith("http")]
 
 
 class Request:
@@ -367,6 +417,11 @@ def list_properties(req):
     ptype = req.q("type")
     listing = req.q("listing")
     kw = req.q("q")
+    minp = _pos_int(req.q("minp"))
+    maxp = _pos_int(req.q("maxp"))
+    beds = _pos_int(req.q("beds"))
+    sort = req.q("sort") if req.q("sort") in SORTS else "new"
+
     conn = get_conn()
     sql = "SELECT * FROM properties WHERE status != 'hidden'"
     args = []
@@ -376,10 +431,16 @@ def list_properties(req):
         sql += " AND ptype = ?"; args.append(ptype)
     if listing:
         sql += " AND listing = ?"; args.append(listing)
+    if minp:
+        sql += " AND price >= ?"; args.append(minp)
+    if maxp:
+        sql += " AND price <= ?"; args.append(maxp)
+    if beds:
+        sql += " AND bedrooms >= ?"; args.append(beds)
     if kw:
         sql += " AND (title LIKE ? OR locality LIKE ? OR description LIKE ?)"
         args += [f"%{kw}%"] * 3
-    sql += " ORDER BY featured DESC, created_at DESC"
+    sql += " ORDER BY " + SORTS[sort][0]
     rows = conn.execute(sql, args).fetchall()
 
     fav_ids = set()
@@ -389,20 +450,33 @@ def list_properties(req):
     conn.close()
 
     cards = "".join(prop_card(p, fav_ids if req.user else None) for p in rows) or \
-        '<div class="empty">No listings match those filters yet.</div>'
+        '<div class="empty">No listings match those filters yet. Try widening your price or type — or <a href="/properties">reset the filters</a>.</div>'
+
+    filtered = any([city, ptype, listing, kw, minp, maxp, beds])
+    count_line = (f'{len(rows)} propert{"y" if len(rows) == 1 else "ies"} '
+                  + ("match your filters" if filtered else "in Jaipur — Vaishali Nagar, "
+                     "Mansarovar, Jagatpura, C-Scheme, Ajmer Road and more."))
+    bed_opts = '<option value="">Any BHK</option>' + "".join(
+        f'<option value="{n}"{" selected" if beds == n else ""}>{n}+ BHK</option>' for n in (1, 2, 3, 4, 5))
+    sort_opts = "".join(
+        f'<option value="{k}"{" selected" if sort == k else ""}>{e(lbl)}</option>'
+        for k, (_o, lbl) in SORTS.items())
 
     body = f"""
 <p class="eyebrow">The Register · Jaipur</p>
 <h1>Property in Jaipur — flats, plots &amp; villas</h1>
-<p class="lead">{len(rows)} verified propert{"y" if len(rows) == 1 else "ies"} in Jaipur — Vaishali Nagar, Mansarovar, Jagatpura, C-Scheme, Ajmer Road and more.</p>
+<p class="lead">{count_line}</p>
 
 <form class="filters" method="get" action="/properties">
   <div class="field"><label>City</label><select name="city"><option value="">All cities</option>{opts(CITIES, city)}</select></div>
   <div class="field"><label>Type</label><select name="type"><option value="">All types</option>{opts(PTYPES, ptype)}</select></div>
   <div class="field"><label>Listing</label><select name="listing"><option value="">Buy &amp; Rent</option><option value="buy"{" selected" if listing=="buy" else ""}>Buy</option><option value="rent"{" selected" if listing=="rent" else ""}>Rent</option></select></div>
+  <div class="field"><label>Min price</label><select name="minp"><option value="">No min</option>{_price_opts(minp)}</select></div>
+  <div class="field"><label>Max price</label><select name="maxp"><option value="">No max</option>{_price_opts(maxp)}</select></div>
+  <div class="field"><label>Bedrooms</label><select name="beds">{bed_opts}</select></div>
+  <div class="field"><label>Sort by</label><select name="sort">{sort_opts}</select></div>
   <div class="field"><label>Keyword</label><input name="q" value="{e(kw)}" placeholder="locality, project…"></div>
-  <button class="btn btn-brass" type="submit">Filter</button>
-  <a class="btn btn-ghost" href="/properties">Reset</a>
+  <div class="filter-actions"><button class="btn btn-brass" type="submit">Filter</button><a class="btn btn-ghost" href="/properties">Reset</a></div>
 </form>
 
 <div class="prop-grid">{cards}</div>
@@ -415,6 +489,66 @@ def list_properties(req):
                            canonical=SITE_BASE + "/properties"))
 
 
+def _gallery(photos, alt):
+    """Main image + clickable thumbnails (inline JS swaps the main image; no libraries)."""
+    main = photos[0]
+    if len(photos) == 1:
+        return (f'<div class="gallery"><img id="galMain" class="gallery-main" '
+                f'src="{e(main)}" alt="{alt}" loading="lazy"></div>')
+    thumbs = "".join(
+        f'<button type="button" class="thumb{" active" if i == 0 else ""}" '
+        f"onclick=\"galSet(this,'{e(u)}')\"><img src=\"{e(u)}\" alt=\"\" loading=\"lazy\"></button>"
+        for i, u in enumerate(photos))
+    js = ("<script>function galSet(b,src){var m=document.getElementById('galMain');"
+          "if(m){m.src=src;}var t=b.parentNode.querySelectorAll('.thumb');"
+          "for(var i=0;i<t.length;i++){t[i].classList.remove('active');}"
+          "b.classList.add('active');}</script>")
+    return (f'<div class="gallery"><img id="galMain" class="gallery-main" src="{e(main)}" '
+            f'alt="{alt}" loading="lazy"><div class="gallery-thumbs">{thumbs}</div></div>{js}')
+
+
+def _amenities_block(p):
+    raw = p["amenities"] if "amenities" in p.keys() else ""
+    items = [a.strip() for a in str(raw or "").replace("\n", ",").split(",") if a.strip()]
+    if not items:
+        return ""
+    chips = "".join(f'<li class="amenity">{e(a)}</li>' for a in items)
+    return (f'<section class="detail-section"><h2>Amenities</h2>'
+            f'<ul class="amenities">{chips}</ul></section>')
+
+
+def _location_block(p):
+    loc = p["locality"] or p["city"]
+    query = urllib.parse.quote_plus(f'{loc}, {p["city"]}, Rajasthan, India')
+    embed = f"https://maps.google.com/maps?q={query}&z=13&output=embed"
+    link = f"https://www.google.com/maps/search/?api=1&query={query}"
+    return (f'<section class="detail-section"><h2>Location</h2>'
+            f'<p class="lead">{e(loc)}, {e(p["city"])} — Rajasthan</p>'
+            f'<div class="map-embed"><iframe title="Map of {e(loc)}, {e(p["city"])}" '
+            f'src="{embed}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe></div>'
+            f'<p style="margin-top:.7rem"><a class="btn btn-ghost btn-sm" href="{link}" '
+            f'target="_blank" rel="noopener">📍 Open in Google Maps</a></p></section>')
+
+
+def _similar(conn, p, limit=3):
+    """Up to `limit` other live listings — same city+type first, then same city."""
+    seen = {p["id"]}
+    out = []
+    for sql, args in (
+        ("SELECT * FROM properties WHERE status!='hidden' AND city=? AND ptype=? AND id!=? "
+         "ORDER BY featured DESC, created_at DESC LIMIT 6", (p["city"], p["ptype"], p["id"])),
+        ("SELECT * FROM properties WHERE status!='hidden' AND city=? AND id!=? "
+         "ORDER BY featured DESC, created_at DESC LIMIT 6", (p["city"], p["id"])),
+    ):
+        for r in conn.execute(sql, args).fetchall():
+            if r["id"] not in seen:
+                out.append(r)
+                seen.add(r["id"])
+                if len(out) >= limit:
+                    return out
+    return out
+
+
 def property_detail(req, pid):
     conn = get_conn()
     p = conn.execute("SELECT * FROM properties WHERE id = ?", (pid,)).fetchone()
@@ -422,6 +556,7 @@ def property_detail(req, pid):
         conn.close()
         return not_found(req)
     owner = conn.execute("SELECT name, phone, email FROM users WHERE id = ?", (p["owner_id"],)).fetchone()
+    similar = _similar(conn, p)
     conn.close()
 
     prefill_name = e(req.user["name"]) if req.user else ""
@@ -433,30 +568,44 @@ def property_detail(req, pid):
     _url = f'{SITE_BASE}/property/{p["id"]}'
     wa_detail = _wa_url(f'Hi, I am interested in {p["title"]} ({_loc}) — {_url}. Please share more details.')
     wa_visit = _wa_url(f'Hi, I would like to schedule a site visit for {p["title"]} ({_loc}) — {_url}.')
-    if p["photos_url"]:
-        banner_media = (f'<img src="{e(p["photos_url"])}" alt="{d_alt}" loading="lazy" '
-                        f'style="max-width:100%;border-radius:12px">')
+    photos = _photo_list(p["photos_url"])
+    if photos:
+        banner_block = _gallery(photos, d_alt)
     else:
-        banner_media = ('<svg width="90" height="70" viewBox="0 0 52 40" fill="none" stroke="currentColor" '
-                        'stroke-width="1.4" aria-hidden="true" focusable="false"><path d="M6 24 18 10l12 14"/>'
-                        '<rect x="10" y="24" width="16" height="12"/><path d="M30 36V18l8-6 8 6v18"/></svg>')
+        banner_block = ('<div class="detail-banner"><svg width="90" height="70" viewBox="0 0 52 40" '
+                        'fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true" '
+                        'focusable="false"><path d="M6 24 18 10l12 14"/><rect x="10" y="24" width="16" '
+                        'height="12"/><path d="M30 36V18l8-6 8 6v18"/></svg></div>')
+
+    # price per sqft — a genuine calculation from real data (buy listings only)
+    persqft = ""
+    if p["listing"] == "buy" and p["price"] and p["area_sqft"]:
+        persqft = f'<div><div class="k">Price / sqft</div><div class="v">₹{int(p["price"]/p["area_sqft"]):,}</div></div>'
+
+    amen_html = _amenities_block(p)
+    loc_html = _location_block(p)
+    sim_html = ""
+    if similar:
+        sim_html = ('<section class="detail-section"><h2>Similar in ' + e(p["city"]) + '</h2>'
+                    '<div class="prop-grid">' + "".join(prop_card(s) for s in similar) + "</div></section>")
 
     body = f"""
 <p><a class="muted-link" href="/properties">← Back to listings</a></p>
 <div class="detail-head">
   <div>
-    <div class="detail-banner">
-      {banner_media}
-    </div>
+    {banner_block}
     <p class="eyebrow" style="margin-top:1.2rem">{e(p["ptype"])} · For {e(p["listing"])}</p>
     <h1>{e(p["title"])}</h1>
     <p class="lead">{e(p["locality"])}{", " if p["locality"] else ""}{e(p["city"])}</p>
     <div class="spec-list">
       <div><div class="k">Price</div><div class="v price">{money(p["price"])}{"/mo" if p["listing"]=="rent" else ""}</div></div>
+      {persqft}
+      <div><div class="k">Type</div><div class="v">{e(p["ptype"])}</div></div>
       <div><div class="k">Status</div><div class="v"><span class="pill {e(p["status"])}">{e(p["status"])}</span></div></div>
       <div><div class="k">Area</div><div class="v">{e(p["area_sqft"] or "—")} sqft</div></div>
       <div><div class="k">Bedrooms</div><div class="v">{e(p["bedrooms"] or "—")}</div></div>
       <div><div class="k">Bathrooms</div><div class="v">{e(p["bathrooms"] or "—")}</div></div>
+      <div><div class="k">Locality</div><div class="v">{e(p["locality"] or p["city"])}</div></div>
       <div><div class="k">Listed by</div><div class="v">{e(owner["name"] if owner else "Realtor Vikkas")}</div></div>
     </div>
     <div class="detail-actions">
@@ -483,6 +632,9 @@ def property_detail(req, pid):
     </div>
   </aside>
 </div>
+{amen_html}
+{loc_html}
+{sim_html}
 """
     # --- dynamic SEO title + description ---
     bhk = f"{p['bedrooms']}BHK " if p["bedrooms"] else ""
@@ -1502,20 +1654,31 @@ def sync_listings(req):
             price = int(float(it.get("price") or 0))
         except (TypeError, ValueError):
             price = 0
+        # optional richer fields — only applied when the payload actually carries them
+        area = _sync_int(it.get("area_sqft"))
+        beds = _sync_int(it.get("bedrooms"))
+        baths = _sync_int(it.get("bathrooms"))
+        desc = it.get("description")
+        amen = it.get("amenities")
         row = conn.execute("SELECT id FROM properties WHERE title = ?", (title,)).fetchone()
         if row:
-            conn.execute(
-                "UPDATE properties SET ptype=?, city=?, locality=?, price=?, "
-                "photos_url=?, status='available' WHERE id=?",
-                (ptype, city, locality, price, photos, row["id"]))
+            sets = ["ptype=?", "city=?", "locality=?", "price=?", "photos_url=?", "status='available'"]
+            vals = [ptype, city, locality, price, photos]
+            if area is not None:  sets.append("area_sqft=?");  vals.append(area)
+            if beds is not None:  sets.append("bedrooms=?");   vals.append(beds)
+            if baths is not None: sets.append("bathrooms=?");  vals.append(baths)
+            if desc is not None:  sets.append("description=?"); vals.append(str(desc))
+            if amen is not None:  sets.append("amenities=?");  vals.append(str(amen))
+            vals.append(row["id"])
+            conn.execute(f"UPDATE properties SET {', '.join(sets)} WHERE id=?", vals)
             updated += 1
         else:
             conn.execute(
                 "INSERT INTO properties (title, ptype, listing, city, locality, price, "
                 "area_sqft, bedrooms, bathrooms, description, status, featured, owner_id, "
-                "photos_url, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (title, ptype, listing, city, locality, price, 0, 0, 0, "",
-                 "available", 0, owner_id, photos, now()))
+                "photos_url, amenities, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (title, ptype, listing, city, locality, price, area or 0, beds or 0, baths or 0,
+                 str(desc or ""), "available", 0, owner_id, photos, str(amen or ""), now()))
             added += 1
 
     if live_titles:
