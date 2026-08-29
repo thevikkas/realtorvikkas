@@ -344,3 +344,46 @@ footer.app-foot { background: var(--indigo-deep); color: #8B96B3; font-size: 0.8
 .amenities { display: flex; flex-wrap: wrap; gap: 8px; margin: 0.3rem 0; }
 .amenity { list-style: none; background: var(--surface-2); border: 1px solid var(--rule);
   border-radius: 20px; padding: 0.3rem 0.85rem; font-size: 0.82rem; color: var(--ink); }
+
+/* --- Phase 3: investment / resort module --- */
+.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.chip { font-size: 0.82rem; padding: 0.35rem 0.85rem; border-radius: 20px; border: 1px solid var(--rule-strong);
+  color: var(--ink); background: var(--surface); transition: background .15s, color .15s, border-color .15s; }
+.chip:hover { border-color: var(--brass); }
+.chip.active { background: var(--indigo); color: #fff; border-color: var(--indigo); }
+
+.inv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; }
+@media (max-width: 940px) { .inv-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .inv-grid { grid-template-columns: 1fr; } }
+.inv-card { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px;
+  overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.inv-vignette { background: linear-gradient(160deg, var(--indigo), var(--indigo-deep)); height: 120px;
+  display: flex; align-items: center; justify-content: center; color: var(--brass-bright); position: relative; }
+.inv-badge { position: absolute; top: 0.6rem; left: 0.6rem; font-size: 0.64rem; letter-spacing: 0.06em;
+  text-transform: uppercase; background: var(--brass); color: #fff; padding: 0.2rem 0.5rem; border-radius: 3px; }
+.inv-body { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.4rem; flex: 1; }
+.inv-body h3 { font-size: 1.1rem; }
+.inv-loc { font-size: 0.85rem; color: var(--muted); }
+.inv-hl { display: flex; flex-direction: column; gap: 0.2rem; margin: 0.2rem 0; }
+.inv-hl li { font-size: 0.8rem; color: var(--ink); padding-left: 1rem; position: relative; }
+.inv-hl li::before { content: "✓"; position: absolute; left: 0; color: var(--brass); font-weight: 700; }
+.inv-foot { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+  margin-top: auto; padding-top: 0.6rem; border-top: 1px dashed var(--rule-strong); }
+.inv-ticket { font-family: var(--font-mono); font-size: 0.85rem; color: var(--brass); font-weight: 700; }
+
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+@media (max-width: 780px) { .steps { grid-template-columns: repeat(2, 1fr); } }
+.step { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 1.1rem 1.2rem; }
+.step-n { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  border-radius: 50%; background: var(--brass); color: #fff; font-weight: 700; font-family: var(--font-mono); margin-bottom: 0.5rem; }
+.step h3 { font-size: 1rem; margin-bottom: 0.3rem; }
+.step p { font-size: 0.83rem; color: var(--muted); }
+
+.consult-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.8rem 1rem; }
+@media (max-width: 560px) { .consult-grid { grid-template-columns: 1fr; } }
+.consult-form label, .consult-grid label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.25rem; }
+.consult-form input, .consult-form select, .consult-form textarea,
+.consult-grid input, .consult-grid select, .consult-grid textarea {
+  width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--surface); }
+.disclaimer { margin-top: 2.4rem; padding: 1rem 1.2rem; background: var(--surface-2); border: 1px solid var(--rule);
+  border-radius: 8px; font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
