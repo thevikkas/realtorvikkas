@@ -64,6 +64,16 @@ SORTS = {
     "area":       ("area_sqft DESC, featured DESC",  "Largest area"),
 }
 
+# Investment / resort module.
+INVEST_CATEGORIES = ["Plot", "Pre-launch", "Resort / Second Home",
+                     "Rental Yield", "Commercial", "Farmhouse"]
+# Shown on every investment page. Deliberately makes NO promise of returns.
+INVEST_DISCLAIMER = (
+    "Property investment carries market risk. Any figures, timelines or attributes shown are "
+    "indicative and provided by the seller or owner — they are not guaranteed returns and are "
+    "subject to independent due diligence. Realtor Vikkas is a real-estate consultancy, not a "
+    "financial adviser. Please verify all details before committing.")
+
 
 # ---------------------------------------------------------------------------
 # Small helpers
@@ -197,16 +207,18 @@ def layout(title, body, req, active="", description=None, canonical=None,
             links = ('<a href="/owner">Dashboard</a>'
                      '<a href="/owner/properties">Properties</a>'
                      '<a href="/owner/leads">Leads</a>'
-                     '<a href="/owner/callbacks">Callbacks</a>'
+                     '<a href="/admin/investments">Investments</a>'
                      '<a href="/properties">Public Site</a>')
         else:
             links = ('<a href="/properties">Browse</a>'
+                     '<a href="/invest">Invest</a>'
                      '<a href="/account">My Account</a>'
                      '<a href="/account/saved">Saved</a>')
         nav = (f'{links}<span class="who">{e(user["name"])} ·</span>'
                f'<a href="/logout">Log out</a>')
     else:
         nav = ('<a href="/properties">Browse</a>'
+               '<a href="/invest">Invest</a>'
                '<a href="/login">Log in</a>'
                '<a class="btn btn-brass btn-sm" href="/register">Sign up</a>')
 
@@ -1546,6 +1558,319 @@ def api_leads(req):
 
 
 # ---------------------------------------------------------------------------
+# Investment / resort module (Phase 3)
+# ---------------------------------------------------------------------------
+
+def _ticket_label(n):
+    try:
+        return money(n) if int(n) > 0 else "On request"
+    except (TypeError, ValueError):
+        return "On request"
+
+
+def _invest_highlights(iv):
+    raw = iv["highlights"] if "highlights" in iv.keys() else ""
+    return [h.strip() for h in str(raw or "").replace("\n", ",").split(",") if h.strip()]
+
+
+_INV_SVG = ('<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+            'stroke-width="1.3" aria-hidden="true"><path d="M3 21h18M5 21V10l7-5 7 5v11"/>'
+            '<path d="M9 21v-6h6v6"/></svg>')
+
+
+def _invest_card(iv):
+    photos = _photo_list(iv["photos_url"])
+    if photos:
+        media = (f'<img src="{e(photos[0])}" alt="{e(iv["category"])} — {e(iv["location"] or "Jaipur")}" '
+                 f'loading="lazy" style="width:100%;height:100%;object-fit:cover">')
+    else:
+        media = _INV_SVG
+    hl = _invest_highlights(iv)[:3]
+    hl_html = ("<ul class='inv-hl'>" + "".join(f"<li>{e(h)}</li>" for h in hl) + "</ul>") if hl else ""
+    return f"""<article class="inv-card">
+  <div class="inv-vignette"><span class="inv-badge">{e(iv["category"])}</span>{media}</div>
+  <div class="inv-body">
+    <h3><a href="/invest/{iv["id"]}">{e(iv["title"])}</a></h3>
+    <div class="inv-loc">{e(iv["location"] or "Jaipur")}</div>
+    {hl_html}
+    <div class="inv-foot">
+      <span class="inv-ticket">{e(_ticket_label(iv["ticket"]))}</span>
+      <a class="pa-btn view" href="/invest/{iv["id"]}">Details</a>
+    </div>
+  </div>
+</article>"""
+
+
+def _consult_form(opp=""):
+    """Investment consultation form → POST /invest/enquiry → the unified leads CRM."""
+    budgets = ["Under ₹25 L", "₹25 L – ₹50 L", "₹50 L – ₹1 Cr", "₹1 – 2 Cr", "₹2 Cr +", "Flexible"]
+    goals = ["Capital appreciation", "Rental income", "Second home / holiday",
+             "Resort / farmhouse", "Not sure yet"]
+    bopts = "".join(f'<option>{e(b)}</option>' for b in budgets)
+    gopts = "".join(f'<option>{e(g)}</option>' for g in goals)
+    return f"""<form method="post" action="/invest/enquiry" class="card consult-form">
+  <input type="hidden" name="opp" value="{e(opp)}">
+  <input type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute!important;left:-9999px!important;top:-9999px!important;height:1px;width:1px;opacity:0">
+  <div class="consult-grid">
+    <div><label>Name</label><input name="name" required></div>
+    <div><label>Phone / WhatsApp</label><input name="phone" required placeholder="+91 …"></div>
+    <div><label>Budget</label><select name="budget">{bopts}</select></div>
+    <div><label>Goal</label><select name="goal">{gopts}</select></div>
+    <div><label>Time horizon (optional)</label><input name="horizon" placeholder="e.g. 3–5 years"></div>
+    <div><label>Preferred area (optional)</label><input name="message" placeholder="e.g. Jagatpura, Ajmer Road…"></div>
+  </div>
+  <button class="btn btn-brass" type="submit" style="margin-top:1rem">Request a consultation</button>
+</form>"""
+
+
+def invest_page(req):
+    cat = req.q("category")
+    conn = get_conn()
+    sql = "SELECT * FROM investments WHERE status != 'hidden'"
+    args = []
+    if cat in INVEST_CATEGORIES:
+        sql += " AND category = ?"; args.append(cat)
+    sql += " ORDER BY featured DESC, created_at DESC"
+    rows = conn.execute(sql, args).fetchall()
+    conn.close()
+
+    chips = f'<a class="chip{"" if cat in INVEST_CATEGORIES else " active"}" href="/invest">All</a>'
+    for c in INVEST_CATEGORIES:
+        chips += (f'<a class="chip{" active" if cat == c else ""}" '
+                  f'href="/invest?category={urllib.parse.quote(c)}">{e(c)}</a>')
+
+    cards = "".join(_invest_card(iv) for iv in rows) or (
+        '<div class="empty">Current opportunities are shared privately. '
+        '<a href="#consult">Request a consultation</a> and Realtor Vikkas will send a shortlist '
+        'matched to your goals.</div>')
+
+    wa = _wa_url("Hi, I'd like an investment consultation for property in Jaipur. Please guide me.")
+    steps = [
+        ("1", "Consultation", "We understand your goal, budget and time horizon — no obligation."),
+        ("2", "Curated shortlist", "You get opportunities matched to you, not a generic list."),
+        ("3", "Due diligence", "Title, approvals, JDA/RERA and paperwork checked before you commit."),
+        ("4", "Invest &amp; manage", "Registry, and ongoing resale or rental support if you need it."),
+    ]
+    steps_html = "".join(
+        f'<div class="step"><span class="step-n">{n}</span><h3>{t}</h3><p>{d}</p></div>'
+        for n, t, d in steps)
+
+    body = f"""
+<p class="eyebrow">Investment &amp; Resorts · Jaipur</p>
+<h1>Invest in Jaipur real estate — with guidance, not guesswork</h1>
+<p class="lead">Plots, pre-launch homes, rental-yield commercial and resort / second-home opportunities
+in and around Jaipur — shortlisted, checked and explained by Realtor Vikkas so you invest with a
+clear picture. No hype, no guaranteed-return promises.</p>
+<div class="detail-actions">
+  <a class="da-btn wa" href="{wa}" target="_blank" rel="noopener">💬 Free consultation</a>
+  <a class="da-btn call" href="tel:{PHONE}">📞 Call Now</a>
+  <a class="da-btn visit" href="#consult">📝 Share your goals</a>
+</div>
+
+<div class="chips" style="margin:1.6rem 0">{chips}</div>
+<div class="inv-grid">{cards}</div>
+
+<section class="detail-section">
+  <h2>How it works</h2>
+  <div class="steps">{steps_html}</div>
+</section>
+
+<section class="detail-section" id="consult">
+  <h2>Request an investment consultation</h2>
+  <p class="lead" style="margin-bottom:1rem">Tell Realtor Vikkas what you're looking for — you'll
+  get a call back and a shortlist. Your details are private.</p>
+  {_consult_form()}
+</section>
+
+<p class="disclaimer">{INVEST_DISCLAIMER}</p>
+"""
+    seo_title = "Property Investment & Resorts in Jaipur — Realtor Vikkas"
+    seo_desc = ("Invest in Jaipur real estate — plots, pre-launch homes, rental-yield commercial and "
+                "resort / second-home opportunities, shortlisted and due-diligence-checked by Realtor "
+                "Vikkas. Request a free, no-obligation consultation.")
+    return Response(layout(seo_title, body, req, description=seo_desc,
+                           canonical=SITE_BASE + "/invest"))
+
+
+def invest_detail(req, iid):
+    conn = get_conn()
+    iv = conn.execute("SELECT * FROM investments WHERE id = ?", (iid,)).fetchone()
+    if not iv or iv["status"] == "hidden":
+        conn.close()
+        return not_found(req)
+    similar = conn.execute(
+        "SELECT * FROM investments WHERE status != 'hidden' AND id != ? AND category = ? "
+        "ORDER BY featured DESC, created_at DESC LIMIT 3", (iid, iv["category"])).fetchall()
+    conn.close()
+
+    photos = _photo_list(iv["photos_url"])
+    banner = _gallery(photos, f'{e(iv["category"])} — {e(iv["location"] or "Jaipur")}') if photos \
+        else f'<div class="detail-banner">{_INV_SVG}</div>'
+    hl = _invest_highlights(iv)
+    hl_html = ("<ul class='amenities'>" + "".join(f"<li class='amenity'>{e(h)}</li>" for h in hl)
+               + "</ul>") if hl else ""
+    horizon_row = (f'<div><div class="k">Indicative horizon</div><div class="v">{e(iv["horizon"])}</div></div>'
+                   if iv["horizon"] else "")
+    _url = f'{SITE_BASE}/invest/{iv["id"]}'
+    wa = _wa_url(f'Hi, I am interested in the investment opportunity "{iv["title"]}" '
+                 f'({iv["location"] or "Jaipur"}) — {_url}. Please share details.')
+    sim_html = ""
+    if similar:
+        sim_html = ('<section class="detail-section"><h2>More ' + e(iv["category"]) + ' opportunities</h2>'
+                    '<div class="inv-grid">' + "".join(_invest_card(s) for s in similar) + "</div></section>")
+
+    body = f"""
+<p><a class="muted-link" href="/invest">← Back to investments</a></p>
+<div class="detail-head">
+  <div>
+    {banner}
+    <p class="eyebrow" style="margin-top:1.2rem">Investment · {e(iv["category"])}</p>
+    <h1>{e(iv["title"])}</h1>
+    <p class="lead">{e(iv["location"] or "Jaipur")}</p>
+    <div class="spec-list">
+      <div><div class="k">Ticket size</div><div class="v price">{e(_ticket_label(iv["ticket"]))}</div></div>
+      <div><div class="k">Category</div><div class="v">{e(iv["category"])}</div></div>
+      {horizon_row}
+    </div>
+    <div class="detail-actions">
+      <a class="da-btn wa" href="{wa}" target="_blank" rel="noopener">💬 WhatsApp</a>
+      <a class="da-btn call" href="tel:{PHONE}">📞 Call Now</a>
+      <a class="da-btn visit" href="#consult">📝 Request consultation</a>
+    </div>
+    {"<h2 style='font-size:1.15rem;margin:1.6rem 0 .5rem'>Highlights</h2>" + hl_html if hl_html else ""}
+    <p style="margin-top:1rem">{e(iv["description"])}</p>
+  </div>
+  <aside>
+    <div class="card" id="consult">
+      <h3 style="font-size:1.2rem;margin-bottom:0.3rem">Request a consultation</h3>
+      <p class="lead" style="font-size:0.85rem;margin-bottom:1rem">Realtor Vikkas will call you back about this opportunity.</p>
+      {_consult_form(iv["title"])}
+    </div>
+  </aside>
+</div>
+<p class="disclaimer">{INVEST_DISCLAIMER}</p>
+{sim_html}
+"""
+    seo_title = f'{iv["title"]} — Investment in {iv["location"] or "Jaipur"} | Realtor Vikkas'
+    seo_desc = (f'{iv["category"]} investment opportunity in {iv["location"] or "Jaipur"}. '
+                + (iv["description"][:150].strip() if iv["description"] else "")).strip()
+    return Response(layout(seo_title, body, req, description=seo_desc,
+                           canonical=SITE_BASE + f"/invest/{iv['id']}"))
+
+
+def invest_enquiry(req):
+    name, phone = req.f("name"), req.f("phone")
+    budget, goal = req.f("budget"), req.f("goal")
+    horizon, msg, opp = req.f("horizon"), req.f("message"), req.f("opp")
+    thanks = "Thank you — Realtor Vikkas will reach out about your investment goals."
+    if _is_spam(name, msg, req.f("website")):
+        return redirect("/invest", msg=thanks)          # silently drop spam
+    parts = []
+    if budget:  parts.append(f"Budget: {budget}")
+    if goal:    parts.append(f"Goal: {goal}")
+    if horizon: parts.append(f"Horizon: {horizon}")
+    if msg:     parts.append(f"Area: {msg}")
+    full = " · ".join(parts) if parts else "Investment consultation request"
+    prop = f"Investment: {opp}" if opp else "Investment consultation"
+    _save_lead(name, phone, prop, full)
+    return redirect("/invest", msg=thanks)
+
+
+# ---- Admin: investment opportunities CRUD (same password admin as leads) ----
+
+def admin_investments(req):
+    if not _admin_ok(req):
+        return redirect("/admin/login")
+    if req.method == "POST":
+        title = req.f("title")
+        if title:
+            conn = get_conn()
+            conn.execute(
+                "INSERT INTO investments (title, category, location, ticket, horizon, highlights, "
+                "description, photos_url, status, featured, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (title, req.f("category") or "Plot", req.f("location"),
+                 _sync_int(req.f("ticket")) or 0, req.f("horizon"), req.f("highlights"),
+                 req.f("description"), req.f("photos_url"), "active",
+                 1 if req.f("featured") else 0, now()))
+            conn.commit()
+            conn.close()
+        return redirect("/admin/investments", msg="Investment opportunity added.")
+
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM investments ORDER BY id DESC").fetchall()
+    conn.close()
+    trs = ""
+    for iv in rows:
+        toggle = "hidden" if iv["status"] != "hidden" else "active"
+        tlabel = "Hide" if iv["status"] != "hidden" else "Show"
+        trs += (
+            f"<tr><td>{e(iv['title'])}</td><td>{e(iv['category'])}</td>"
+            f"<td>{e(iv['location'] or '—')}</td><td class='tabular'>{e(_ticket_label(iv['ticket']))}</td>"
+            f"<td>{e(iv['status'])}</td>"
+            f"<td><div style='display:flex;gap:0.3rem;align-items:center'>"
+            f"<a class='btn btn-ghost btn-sm' href='/invest/{iv['id']}' target='_blank'>View</a>"
+            f"<form method='post' action='/admin/investments/{iv['id']}/status'>"
+            f"<input type='hidden' name='to' value='{toggle}'>"
+            f"<button class='btn btn-ghost btn-sm' type='submit'>{tlabel}</button></form>"
+            f"<form method='post' action='/admin/investments/{iv['id']}/delete' "
+            f"onsubmit=\"return confirm('Delete this opportunity permanently?')\">"
+            f"<button class='btn btn-ghost btn-sm' type='submit' style='color:#c0392b'>✕</button></form>"
+            f"</div></td></tr>")
+    trs = trs or "<tr><td colspan='6' class='empty'>No opportunities yet.</td></tr>"
+    catopts = opts(INVEST_CATEGORIES)
+    body = f"""
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+  <div><p class="eyebrow">Admin</p><h1>💼 Investment opportunities</h1></div>
+  <a class="btn btn-ghost btn-sm" href="/admin/logout">Log out</a>
+</div>
+<p class="lead" style="margin-bottom:1.2rem">{len(rows)} opportunit{"y" if len(rows)==1 else "ies"}. Add real ones here — leave prices blank to show “On request”. Do not enter guaranteed returns.</p>
+
+<form method="post" action="/admin/investments" class="card" style="margin-bottom:1.6rem">
+  <div class="consult-grid">
+    <div><label>Title *</label><input name="title" required placeholder="e.g. JDA-approved plots, Ajmer Road"></div>
+    <div><label>Category</label><select name="category">{catopts}</select></div>
+    <div><label>Location</label><input name="location" placeholder="Area, Jaipur"></div>
+    <div><label>Ticket size ₹ (blank = On request)</label><input name="ticket" inputmode="numeric" placeholder="e.g. 8500000"></div>
+    <div><label>Indicative horizon (optional)</label><input name="horizon" placeholder="e.g. 3–5 years"></div>
+    <div><label>Photos URL(s), comma-separated</label><input name="photos_url" placeholder="https://…"></div>
+  </div>
+  <div style="margin-top:0.8rem"><label>Highlights (comma-separated)</label><input name="highlights" placeholder="JDA-approved, Clear title, Corner plot"></div>
+  <div style="margin-top:0.8rem"><label>Description</label><textarea name="description" placeholder="Factual details. No guaranteed returns."></textarea></div>
+  <label style="display:flex;align-items:center;gap:0.4rem;margin-top:0.8rem;font-size:0.85rem"><input type="checkbox" name="featured" value="1" style="width:auto"> Feature on top</label>
+  <button class="btn btn-brass" type="submit" style="margin-top:1rem">Add opportunity</button>
+</form>
+
+<div class="table-wrap"><table class="data">
+  <thead><tr><th>Title</th><th>Category</th><th>Location</th><th>Ticket</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>{trs}</tbody>
+</table></div>
+"""
+    return Response(layout("Investments · Admin", body, req))
+
+
+def admin_invest_status(req, iid):
+    if not _admin_ok(req):
+        return redirect("/admin/login")
+    to = req.f("to")
+    if to in ("active", "hidden"):
+        conn = get_conn()
+        conn.execute("UPDATE investments SET status = ? WHERE id = ?", (to, iid))
+        conn.commit()
+        conn.close()
+    return redirect("/admin/investments", msg="Updated.")
+
+
+def admin_invest_delete(req, iid):
+    if not _admin_ok(req):
+        return redirect("/admin/login")
+    conn = get_conn()
+    conn.execute("DELETE FROM investments WHERE id = ?", (iid,))
+    conn.commit()
+    conn.close()
+    return redirect("/admin/investments", msg="Opportunity deleted.")
+
+
+# ---------------------------------------------------------------------------
 # SEO: sitemap.xml + robots.txt
 # ---------------------------------------------------------------------------
 
@@ -1553,6 +1878,8 @@ def sitemap_xml(req):
     conn = get_conn()
     rows = conn.execute(
         "SELECT id, created_at FROM properties WHERE status != 'hidden' ORDER BY id").fetchall()
+    invs = conn.execute(
+        "SELECT id, created_at FROM investments WHERE status != 'hidden' ORDER BY id").fetchall()
     conn.close()
 
     def url(loc, priority, lastmod=None):
@@ -1564,9 +1891,12 @@ def sitemap_xml(req):
              '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
              url(SITE_BASE + "/", "1.0"),
              url(SITE_BASE + "/properties", "0.9"),
+             url(SITE_BASE + "/invest", "0.8"),
              url(SITE_BASE + "/terms", "0.3")]
     for r in rows:
         parts.append(url(SITE_BASE + f"/property/{r['id']}", "0.8", (r["created_at"] or "")[:10]))
+    for r in invs:
+        parts.append(url(SITE_BASE + f"/invest/{r['id']}", "0.7", (r["created_at"] or "")[:10]))
     parts.append("</urlset>")
     return Response("".join(parts), content_type="application/xml; charset=utf-8")
 
@@ -1711,6 +2041,12 @@ def dispatch(req):
         return submit_enquiry(req)
     if path == "/callback" and m == "POST":
         return submit_callback(req)
+    if path == "/invest" and m == "GET":
+        return invest_page(req)
+    if path == "/invest/enquiry" and m == "POST":
+        return invest_enquiry(req)
+    if path.startswith("/invest/") and m == "GET":
+        return invest_detail(req, _int(path.rsplit("/", 1)[1]))
     if path == "/api/sync-listings" and m == "POST":
         return sync_listings(req)
     if path == "/sitemap.xml" and m == "GET":
@@ -1777,6 +2113,12 @@ def dispatch(req):
         return admin_lead_status(req, _int(path.split("/")[3]))
     if path.startswith("/admin/leads/") and path.endswith("/delete") and m == "POST":
         return admin_lead_delete(req, _int(path.split("/")[3]))
+    if path == "/admin/investments":
+        return admin_investments(req)
+    if path.startswith("/admin/investments/") and path.endswith("/status") and m == "POST":
+        return admin_invest_status(req, _int(path.split("/")[3]))
+    if path.startswith("/admin/investments/") and path.endswith("/delete") and m == "POST":
+        return admin_invest_delete(req, _int(path.split("/")[3]))
     if path == "/api/leads" and m == "GET":
         return api_leads(req)
 
