@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS properties (
     status      TEXT    NOT NULL DEFAULT 'available', -- available | sold | rented
     featured    INTEGER NOT NULL DEFAULT 0,
     photos_url  TEXT    DEFAULT '',
+    amenities   TEXT    DEFAULT '',                   -- comma-separated (optional)
     owner_id    INTEGER,
     created_at  TEXT    NOT NULL,
     FOREIGN KEY (owner_id) REFERENCES users(id)
@@ -130,6 +131,9 @@ def init_db():
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
     if "photos_url" not in cols:
         conn.execute("ALTER TABLE properties ADD COLUMN photos_url TEXT DEFAULT ''")
+        conn.commit()
+    if "amenities" not in cols:                    # migration: optional amenities list
+        conn.execute("ALTER TABLE properties ADD COLUMN amenities TEXT DEFAULT ''")
         conn.commit()
 
     # Seed only when there are no users yet, so re-runs don't duplicate data.

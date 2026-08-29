@@ -320,3 +320,27 @@ footer.app-foot { background: var(--indigo-deep); color: #8B96B3; font-size: 0.8
 .da-btn.call { background: var(--indigo); color: #fff; }
 .da-btn.visit { background: var(--brass); color: #fff; }
 @media (max-width: 520px) { .da-btn { flex: 1; justify-content: center; } }
+
+/* --- Phase 2: search filters, gallery, map, amenities, similar --- */
+.filters .field { flex: 1 1 140px; min-width: 120px; }
+.filters select, .filters input { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--rule-strong);
+  border-radius: 6px; background: var(--surface); }
+.filter-actions { display: flex; gap: 0.5rem; align-items: flex-end; flex: 1 1 auto; }
+@media (max-width: 600px) { .filter-actions { flex: 1 1 100%; } .filter-actions .btn { flex: 1; } }
+
+.gallery { margin-bottom: 0.4rem; }
+.gallery-main { width: 100%; height: auto; max-height: 440px; object-fit: cover;
+  border-radius: 12px; background: linear-gradient(160deg, var(--indigo), var(--indigo-deep)); }
+.gallery-thumbs { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.thumb { width: 78px; height: 58px; padding: 0; border: 2px solid transparent; border-radius: 8px;
+  overflow: hidden; cursor: pointer; background: none; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; }
+.thumb.active { border-color: var(--brass); }
+
+.detail-section { margin-top: 2.4rem; }
+.detail-section h2 { font-size: 1.4rem; margin-bottom: 0.8rem; }
+.map-embed { border-radius: 12px; overflow: hidden; border: 1px solid var(--rule); }
+.map-embed iframe { width: 100%; height: 300px; border: 0; display: block; }
+.amenities { display: flex; flex-wrap: wrap; gap: 8px; margin: 0.3rem 0; }
+.amenity { list-style: none; background: var(--surface-2); border: 1px solid var(--rule);
+  border-radius: 20px; padding: 0.3rem 0.85rem; font-size: 0.82rem; color: var(--ink); }
