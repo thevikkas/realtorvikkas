@@ -106,6 +106,21 @@ CREATE TABLE IF NOT EXISTS leads (
     status   TEXT    NOT NULL DEFAULT 'New',   -- New | Contacted | Visited | Closed
     created  TEXT    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS investments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT    NOT NULL,
+    category    TEXT    NOT NULL DEFAULT 'Plot',   -- Plot | Pre-launch | Resort / Second Home | Rental Yield | Commercial | Farmhouse
+    location    TEXT    DEFAULT '',
+    ticket      INTEGER DEFAULT 0,                 -- indicative ticket size in INR (0 = "On request")
+    horizon     TEXT    DEFAULT '',                -- owner's words, e.g. "3–5 years" (optional)
+    highlights  TEXT    DEFAULT '',                -- comma / newline separated bullet points
+    description TEXT    DEFAULT '',
+    photos_url  TEXT    DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT 'active',  -- active | hidden
+    featured    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT    NOT NULL
+);
 """
 
 
@@ -140,6 +155,11 @@ def init_db():
     have_users = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
     if not have_users:
         _seed(conn)
+    # Seed demo investment opportunities once (independent of users, so it also
+    # populates an already-live database the first time the table appears).
+    have_inv = conn.execute("SELECT COUNT(*) AS c FROM investments").fetchone()["c"]
+    if not have_inv:
+        _seed_investments(conn)
     ensure_accounts(conn)          # guarantee the real owner + client logins
     conn.close()
     return first_time
@@ -251,4 +271,35 @@ def _seed(conn):
         (1, 2, "Aarti Sharma", "customer@example.com", "+91 90000 11111",
          "Is the Jagatpura villa still available for a site visit this weekend?", "new", now()),
     )
+    conn.commit()
+
+
+def _seed_investments(conn):
+    """Demo investment opportunities — structural placeholders Vikkas replaces with
+    real ones via /admin/investments. Deliberately carry NO invented returns/ROI:
+    only factual attributes; prices show 'On request' until real figures are added."""
+    demo = [
+        # title, category, location, ticket, horizon, highlights, description
+        ("JDA-Approved Land Bank — Ajmer Road Corridor", "Plot", "Ajmer Road, Jaipur", 0, "",
+         "JDA-approved layout, Clear title, Developing arterial corridor, Ready for registry",
+         "A land-banking opportunity along the Ajmer Road growth corridor for buyers who want "
+         "approved, clear-title land to hold. All prices, sizes and timelines are confirmed on consultation."),
+        ("Resort & Second-Home Plots — Jaipur Outskirts", "Resort / Second Home", "Jaipur outskirts", 0, "",
+         "Gated project, Farmhouse / weekend-home use, Green surroundings, Managed community",
+         "Weekend-home and second-home plots on Jaipur's outskirts, for buyers seeking a managed "
+         "farmhouse or resort-style holding. Current availability is shared on request."),
+        ("Pre-Launch Residential — Early-Entry Allotment", "Pre-launch", "Jaipur", 0, "",
+         "Early-entry allotment, RERA status verified on request, Builder track-record shared",
+         "Early-entry allotment in a pre-launch residential project. RERA registration and builder "
+         "details are verified and shared during consultation."),
+        ("Rental-Yield Commercial Unit — Main-Road Frontage", "Rental Yield", "Jaipur", 0, "",
+         "Main-road frontage, Suited to clinic / office / retail, Leasing support",
+         "A commercial unit positioned for rental income, with leasing support. Rental outcomes depend "
+         "on the tenant and the market at the time and are not guaranteed."),
+    ]
+    for (title, cat, loc, ticket, horizon, highlights, desc) in demo:
+        conn.execute(
+            "INSERT INTO investments (title, category, location, ticket, horizon, highlights, "
+            "description, status, featured, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (title, cat, loc, ticket, horizon, highlights, desc, "active", 1, now()))
     conn.commit()
