@@ -6,6 +6,7 @@ Standard library only. Run:  python3 app.py   then open http://localhost:8000
 Public site + customer panel + owner (admin) panel, backed by SQLite.
 """
 
+import gzip
 import hashlib
 import hmac
 import html
@@ -23,6 +24,14 @@ from database import get_conn, init_db, now
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "static")
+
+# Cache-busting version for /static/app.css — changes whenever the file changes,
+# so browsers pick up a new stylesheet immediately after a deploy while still
+# caching it aggressively between deploys.
+try:
+    _ASSET_V = str(int(os.path.getmtime(os.path.join(STATIC_DIR, "app.css"))))
+except OSError:
+    _ASSET_V = "1"
 PORT = int(os.environ.get("PORT") or 10000)   # Render routes to $PORT (default 10000)
 # Secret for the Excel→website sync endpoint. Set a strong value on Render (env
 # var SYNC_KEY); the fallback lets it work locally for testing.
@@ -256,7 +265,7 @@ def layout(title, body, req, active="", description=None, canonical=None,
 <meta property="og:description" content="{desc}">
 <meta property="og:url" content="{canon}">{og_img}
 <meta name="twitter:card" content="summary_large_image">
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/app.css?v={_ASSET_V}">
 {head_extra}
 </head>
 <body>
@@ -534,12 +543,21 @@ def _location_block(p):
     query = urllib.parse.quote_plus(f'{loc}, {p["city"]}, Rajasthan, India')
     embed = f"https://maps.google.com/maps?q={query}&z=13&output=embed"
     link = f"https://www.google.com/maps/search/?api=1&query={query}"
+    # Facade: don't load the third-party map until the visitor asks — faster first paint,
+    # no cross-site request on page load, and it still works with JS.
     return (f'<section class="detail-section"><h2>Location</h2>'
             f'<p class="lead">{e(loc)}, {e(p["city"])} — Rajasthan</p>'
-            f'<div class="map-embed"><iframe title="Map of {e(loc)}, {e(p["city"])}" '
-            f'src="{embed}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe></div>'
+            f'<div class="map-embed map-facade" role="button" tabindex="0" data-embed="{embed}" '
+            f'onclick="loadMap(this)" onkeydown="if(event.key===\'Enter\')loadMap(this)" '
+            f'aria-label="Load map of {e(loc)}, {e(p["city"])}">'
+            f'<div class="map-facade-inner"><span class="map-pin" aria-hidden="true">📍</span>'
+            f'<span>Tap to load the map</span></div></div>'
             f'<p style="margin-top:.7rem"><a class="btn btn-ghost btn-sm" href="{link}" '
-            f'target="_blank" rel="noopener">📍 Open in Google Maps</a></p></section>')
+            f'target="_blank" rel="noopener">📍 Open in Google Maps</a></p>'
+            f'<script>function loadMap(el){{var s=el.getAttribute("data-embed");if(!s)return;'
+            f'el.innerHTML=\'<iframe title="Map" src="\'+s+\'" loading="lazy" '
+            f'referrerpolicy="no-referrer-when-downgrade"></iframe>\';'
+            f'el.classList.remove("map-facade");el.removeAttribute("onclick");}}</script></section>')
 
 
 def _similar(conn, p, limit=3):
@@ -1930,7 +1948,10 @@ def serve_static(req, filename):
     ext = os.path.splitext(full)[1].lower()
     with open(full, "rb") as fh:
         data = fh.read()
-    return Response(data, content_type=CONTENT_TYPES.get(ext, "application/octet-stream"))
+    # Static assets rarely change (and app.css is cache-busted with ?v=), so let
+    # browsers keep them for a month — fewer round-trips on repeat visits.
+    return Response(data, content_type=CONTENT_TYPES.get(ext, "application/octet-stream"),
+                    headers=[("Cache-Control", "public, max-age=2592000")])
 
 
 def not_found(req):
@@ -2173,14 +2194,26 @@ class Handler(BaseHTTPRequestHandler):
             c["_ref"]["path"] = "/"
             resp.headers.append(("Set-Cookie", c["_ref"].OutputString()))
 
+        body = resp.body
+        extra = list(resp.headers)
+        # gzip text responses when the client accepts it — big transfer savings on HTML/CSS.
+        ctype = resp.content_type
+        compressible = ctype.startswith("text/") or any(
+            t in ctype for t in ("json", "xml", "javascript", "svg"))
+        accepts_gzip = "gzip" in (self.headers.get("Accept-Encoding", "") or "")
+        if accepts_gzip and compressible and len(body) > 512:
+            body = gzip.compress(body, 6)
+            extra.append(("Content-Encoding", "gzip"))
+            extra.append(("Vary", "Accept-Encoding"))
+
         self.send_response(resp.status)
         self.send_header("Content-Type", resp.content_type)
-        self.send_header("Content-Length", str(len(resp.body)))
-        for k, v in resp.headers:
+        self.send_header("Content-Length", str(len(body)))
+        for k, v in extra:
             self.send_header(k, v)
         self.end_headers()
         if method != "HEAD":
-            self.wfile.write(resp.body)
+            self.wfile.write(body)
 
     def do_GET(self):
         self._handle("GET")
