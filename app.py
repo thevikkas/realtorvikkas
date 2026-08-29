@@ -25,6 +25,15 @@ from database import get_conn, init_db, now
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "static")
 
+# Vendored, dependency-free QR encoder (for per-listing QR codes). Kept in the
+# repo so it works on the host with no pip install; degrades gracefully if absent.
+import sys as _sys
+_sys.path.insert(0, os.path.join(HERE, "vendor"))
+try:
+    import segno as _segno
+except Exception:
+    _segno = None
+
 # Cache-busting version for /static/app.css — changes whenever the file changes,
 # so browsers pick up a new stylesheet immediately after a deploy while still
 # caching it aggressively between deploys.
@@ -82,6 +91,23 @@ INVEST_DISCLAIMER = (
     "indicative and provided by the seller or owner — they are not guaranteed returns and are "
     "subject to independent due diligence. Realtor Vikkas is a real-estate consultancy, not a "
     "financial adviser. Please verify all details before committing.")
+
+# Market insights / guides module.
+INSIGHT_CATEGORIES = ["Guide", "Market Note", "Locality", "Investment"]
+EMI_DISCLAIMER = (
+    "This EMI estimate is indicative only — it is a standard calculation from the numbers you "
+    "enter, not a loan offer. Actual rates, eligibility and charges are decided by your lender.")
+
+
+def _qr_svg(url):
+    """Inline SVG QR code for a URL (dark indigo modules on white), or '' if unavailable."""
+    if _segno is None:
+        return ""
+    try:
+        return _segno.make(url, error="m").svg_inline(scale=4, border=2,
+                                                       dark="#1B2A4A", light="#ffffff")
+    except Exception:
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -217,10 +243,12 @@ def layout(title, body, req, active="", description=None, canonical=None,
                      '<a href="/owner/properties">Properties</a>'
                      '<a href="/owner/leads">Leads</a>'
                      '<a href="/admin/investments">Investments</a>'
+                     '<a href="/admin/insights">Insights</a>'
                      '<a href="/properties">Public Site</a>')
         else:
             links = ('<a href="/properties">Browse</a>'
                      '<a href="/invest">Invest</a>'
+                     '<a href="/insights">Insights</a>'
                      '<a href="/account">My Account</a>'
                      '<a href="/account/saved">Saved</a>')
         nav = (f'{links}<span class="who">{e(user["name"])} ·</span>'
@@ -228,6 +256,7 @@ def layout(title, body, req, active="", description=None, canonical=None,
     else:
         nav = ('<a href="/properties">Browse</a>'
                '<a href="/invest">Invest</a>'
+               '<a href="/insights">Insights</a>'
                '<a href="/login">Log in</a>'
                '<a class="btn btn-brass btn-sm" href="/register">Sign up</a>')
 
@@ -365,6 +394,7 @@ def prop_card(p, fav_ids=None):
     return f"""<article class="prop-card">
   <div class="prop-vignette">
     <span class="listing-badge">For {e(p["listing"])}</span>
+    {_compare_toggle_btn(p["id"])}
     {media}
   </div>
   <div class="prop-body">
@@ -486,7 +516,7 @@ def list_properties(req):
     body = f"""
 <p class="eyebrow">The Register · Jaipur</p>
 <h1>Property in Jaipur — flats, plots &amp; villas</h1>
-<p class="lead">{count_line}</p>
+<p class="lead">{count_line} <span class="tool-hint">· Tap <b>⇄ Compare</b> on any two, or use the <a href="/emi">EMI calculator</a>.</span></p>
 
 <form class="filters" method="get" action="/properties">
   <div class="field"><label>City</label><select name="city"><option value="">All cities</option>{opts(CITIES, city)}</select></div>
@@ -501,6 +531,7 @@ def list_properties(req):
 </form>
 
 <div class="prop-grid">{cards}</div>
+{_COMPARE_ASSETS}
 """
     seo_title = "Properties in Jaipur — Flats, Plots & Villas for Sale & Rent"
     seo_desc = ("Browse verified property listings in Jaipur — flats, plots and villas for "
@@ -619,6 +650,17 @@ def property_detail(req, pid):
         sim_html = ('<section class="detail-section"><h2>Similar in ' + e(p["city"]) + '</h2>'
                     '<div class="prop-grid">' + "".join(prop_card(s) for s in similar) + "</div></section>")
 
+    # QR (scan to open/share) + EMI shortcut in the aside
+    qr_svg = _qr_svg(f"{SITE_BASE}/property/{p['id']}")
+    qr_card = (f'<div class="card qr-card"><h3 style="font-size:1.05rem;margin-bottom:.3rem">Scan &amp; share</h3>'
+               f'<p class="lead" style="font-size:.8rem;margin-bottom:.6rem">Point a phone camera here to open this listing.</p>'
+               f'<div class="qr-box">{qr_svg}</div></div>') if qr_svg else ""
+    emi_href = f"/emi?amount={p['price']}" if p["listing"] == "buy" and p["price"] else "/emi"
+    emi_card = (f'<div class="card"><h3 style="font-size:1.05rem;margin-bottom:.3rem">Plan your budget</h3>'
+                f'<p class="lead" style="font-size:.8rem;margin-bottom:.7rem">'
+                + ("See the monthly EMI for this price." if p["listing"] == "buy" else "Work out a home-loan EMI.")
+                + f'</p><a class="btn btn-ghost btn-sm" href="{emi_href}">🧮 EMI calculator</a></div>')
+
     body = f"""
 <p><a class="muted-link" href="/properties">← Back to listings</a></p>
 <div class="detail-head">
@@ -660,6 +702,8 @@ def property_detail(req, pid):
         <button class="btn btn-brass" type="submit" style="width:100%">Send enquiry</button>
       </form>
     </div>
+    {emi_card}
+    {qr_card}
   </aside>
 </div>
 {amen_html}
@@ -1736,6 +1780,9 @@ def invest_detail(req, iid):
     if similar:
         sim_html = ('<section class="detail-section"><h2>More ' + e(iv["category"]) + ' opportunities</h2>'
                     '<div class="inv-grid">' + "".join(_invest_card(s) for s in similar) + "</div></section>")
+    qr_svg = _qr_svg(_url)
+    qr_card = (f'<div class="card qr-card"><h3 style="font-size:1.05rem;margin-bottom:.3rem">Scan &amp; share</h3>'
+               f'<div class="qr-box">{qr_svg}</div></div>') if qr_svg else ""
 
     body = f"""
 <p><a class="muted-link" href="/invest">← Back to investments</a></p>
@@ -1764,6 +1811,7 @@ def invest_detail(req, iid):
       <p class="lead" style="font-size:0.85rem;margin-bottom:1rem">Realtor Vikkas will call you back about this opportunity.</p>
       {_consult_form(iv["title"])}
     </div>
+    {qr_card}
   </aside>
 </div>
 <p class="disclaimer">{INVEST_DISCLAIMER}</p>
@@ -1889,6 +1937,356 @@ def admin_invest_delete(req, iid):
 
 
 # ---------------------------------------------------------------------------
+# Property comparison (Phase 5)
+# ---------------------------------------------------------------------------
+
+# Tray + client logic (localStorage). Plain string (no f) so JS braces stay literal.
+_COMPARE_ASSETS = """
+<div id="cmpTray" class="cmp-tray" hidden>
+  <span class="cmp-count"></span>
+  <a class="btn btn-brass btn-sm" id="cmpGo" href="/compare">Compare</a>
+  <button class="btn btn-ghost btn-sm" type="button" onclick="cmpClear()">Clear</button>
+</div>
+<script>
+(function(){
+  function get(){try{return JSON.parse(localStorage.getItem('rvCompare')||'[]')}catch(e){return[]}}
+  function set(a){localStorage.setItem('rvCompare',JSON.stringify(a.slice(0,4)));render()}
+  window.cmpToggle=function(id){var a=get();id=String(id);var i=a.indexOf(id);
+    if(i>=0){a.splice(i,1)}else{if(a.length>=4){alert('You can compare up to 4 at a time.');return}a.push(id)}set(a)};
+  window.cmpClear=function(){set([])};
+  function render(){var a=get();
+    document.querySelectorAll('.cmp-toggle').forEach(function(b){
+      b.classList.toggle('on',a.indexOf(b.getAttribute('data-cmp'))>=0)});
+    var t=document.getElementById('cmpTray');if(!t)return;
+    if(a.length){t.hidden=false;t.querySelector('.cmp-count').textContent=a.length+' selected';
+      document.getElementById('cmpGo').href='/compare?ids='+a.join(',')}else{t.hidden=true}}
+  document.addEventListener('DOMContentLoaded',render);render();
+})();
+</script>"""
+
+
+def _compare_toggle_btn(pid):
+    return (f'<button type="button" class="cmp-toggle" data-cmp="{pid}" '
+            f'onclick="cmpToggle({pid})" aria-label="Add to compare" title="Add to compare">⇄ Compare</button>')
+
+
+def _amenities_inline(p):
+    raw = p["amenities"] if "amenities" in p.keys() else ""
+    items = [a.strip() for a in str(raw or "").replace("\n", ",").split(",") if a.strip()]
+    return ", ".join(items) if items else "—"
+
+
+def compare_page(req):
+    ids, seen = [], set()
+    for tok in (req.q("ids") or "").split(","):
+        tok = tok.strip()
+        if tok.isdigit() and int(tok) not in seen:
+            seen.add(int(tok)); ids.append(int(tok))
+    ids = ids[:4]
+    conn = get_conn()
+    props = []
+    for pid in ids:
+        p = conn.execute("SELECT * FROM properties WHERE id=? AND status!='hidden'", (pid,)).fetchone()
+        if p:
+            props.append(p)
+    conn.close()
+
+    if len(props) < 2:
+        body = f"""
+<p class="eyebrow">Compare</p>
+<h1>Compare properties side by side</h1>
+<p class="lead">Pick at least two listings to compare. On the
+<a href="/properties">listings page</a>, tap <b>⇄ Compare</b> on any property, then open Compare.</p>
+{_COMPARE_ASSETS}
+"""
+        return Response(layout("Compare properties", body, req,
+                               description="Compare Jaipur property listings side by side.",
+                               canonical=SITE_BASE + "/compare"))
+
+    def psqft(p):
+        return (f'₹{int(p["price"]/p["area_sqft"]):,}'
+                if p["listing"] == "buy" and p["price"] and p["area_sqft"] else "—")
+
+    def head(p):
+        photos = _photo_list(p["photos_url"])
+        thumb = (f'<img src="{e(photos[0])}" alt="" style="width:100%;height:84px;object-fit:cover;border-radius:6px">'
+                 if photos else '<div class="cmp-noimg" aria-hidden="true">🏠</div>')
+        return (f'{thumb}<a href="/property/{p["id"]}" class="cmp-title">{e(p["title"])}</a>')
+
+    def actions(p):
+        wa = _wa_url(f'Hi, I am interested in {p["title"]} — {SITE_BASE}/property/{p["id"]}. Please share details.')
+        return (f'<a class="pa-btn view" href="/property/{p["id"]}">View</a>'
+                f'<a class="pa-btn wa" href="{wa}" target="_blank" rel="noopener">WhatsApp</a>')
+
+    rows = [
+        ("Price", [f'<span class="price">{money(p["price"])}{"/mo" if p["listing"]=="rent" else ""}</span>' for p in props]),
+        ("Price / sqft", [psqft(p) for p in props]),
+        ("Type", [e(p["ptype"]) for p in props]),
+        ("For", [e(p["listing"].title()) for p in props]),
+        ("Bedrooms", [str(p["bedrooms"] or "—") for p in props]),
+        ("Bathrooms", [str(p["bathrooms"] or "—") for p in props]),
+        ("Area (sqft)", [str(p["area_sqft"] or "—") for p in props]),
+        ("Locality", [e(p["locality"] or p["city"]) for p in props]),
+        ("Status", [f'<span class="pill {e(p["status"])}">{e(p["status"])}</span>' for p in props]),
+        ("Amenities", [e(_amenities_inline(p)) for p in props]),
+    ]
+    thead = '<tr><th class="cmp-lbl"></th>' + "".join(f'<th>{head(p)}</th>' for p in props) + "</tr>"
+    tbody = ""
+    for label, cells in rows:
+        tbody += f'<tr><td class="cmp-lbl">{label}</td>' + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+    tbody += ('<tr><td class="cmp-lbl">Enquire</td>'
+              + "".join(f'<td><div class="prop-actions">{actions(p)}</div></td>' for p in props) + "</tr>")
+
+    body = f"""
+<p class="eyebrow">Compare</p>
+<h1>Comparing {len(props)} properties</h1>
+<p class="lead">Side by side, so you can weigh them at a glance.</p>
+<div class="table-wrap"><table class="data cmp-table"><thead>{thead}</thead><tbody>{tbody}</tbody></table></div>
+<p style="margin-top:1rem"><a class="btn btn-ghost btn-sm" href="/properties">← Back to listings</a></p>
+{_COMPARE_ASSETS}
+"""
+    return Response(layout("Compare properties", body, req,
+                           description="Compare Jaipur property listings side by side — price, area, BHK and amenities.",
+                           canonical=SITE_BASE + "/compare"))
+
+
+# ---------------------------------------------------------------------------
+# EMI calculator (Phase 5) — deterministic math on the visitor's own inputs
+# ---------------------------------------------------------------------------
+
+_EMI_JS = """
+<script>
+(function(){
+  function inr(n){n=Math.round(n||0);return '\\u20B9'+n.toLocaleString('en-IN')}
+  function g(id){return document.getElementById(id)}
+  function calc(){
+    var P=parseFloat(g('emiAmt').value)||0;
+    var r=(parseFloat(g('emiRate').value)||0)/12/100;
+    var n=(parseFloat(g('emiYears').value)||0)*12;
+    var emi = (r>0&&n>0)? P*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1) : (n>0? P/n : 0);
+    var total=emi*n, interest=total-P;
+    g('emiEMI').textContent = (P&&n)? inr(emi) : '\\u2014';
+    g('emiP').textContent = inr(P);
+    g('emiI').textContent = (P&&n)? inr(interest) : '\\u2014';
+    g('emiT').textContent = (P&&n)? inr(total) : '\\u2014';
+    var pi = total>0? (P/total*100) : 50;
+    g('emiBarP').style.width=pi+'%'; g('emiBarI').style.width=(100-pi)+'%';
+  }
+  ['emiAmt','emiRate','emiYears'].forEach(function(id){g(id).addEventListener('input',calc)});
+  calc();
+})();
+</script>"""
+
+
+def emi_page(req):
+    amt = _pos_int(req.q("amount")) or ""
+    body = f"""
+<p class="eyebrow">Tools · EMI Calculator</p>
+<h1>Home-loan EMI calculator</h1>
+<p class="lead">Estimate your monthly instalment. It's all worked out on your device from the numbers you enter — nothing is sent anywhere.</p>
+<div class="emi-wrap">
+  <form class="card emi-form" onsubmit="return false">
+    <label>Loan amount (₹)</label>
+    <input id="emiAmt" type="number" min="0" step="10000" value="{amt}" placeholder="e.g. 5000000">
+    <label>Interest rate (% per year)</label>
+    <input id="emiRate" type="number" min="0" step="0.05" value="8.5">
+    <label>Tenure (years)</label>
+    <input id="emiYears" type="number" min="1" max="40" step="1" value="20">
+  </form>
+  <div class="card emi-out">
+    <div class="emi-headline"><span class="k">Monthly EMI</span><span class="v price" id="emiEMI">—</span></div>
+    <div class="emi-grid">
+      <div><span class="k">Principal</span><span id="emiP">—</span></div>
+      <div><span class="k">Total interest</span><span id="emiI">—</span></div>
+      <div><span class="k">Total payable</span><span id="emiT">—</span></div>
+    </div>
+    <div class="emi-bar"><span id="emiBarP" class="barP"></span><span id="emiBarI" class="barI"></span></div>
+    <div class="emi-legend"><span><i class="dotP"></i> Principal</span><span><i class="dotI"></i> Interest</span></div>
+  </div>
+</div>
+<p class="disclaimer">{EMI_DISCLAIMER}</p>
+{_EMI_JS}
+"""
+    return Response(layout("EMI Calculator", body, req,
+                           description="Free home-loan EMI calculator for Jaipur property buyers — monthly instalment, total interest and payable.",
+                           canonical=SITE_BASE + "/emi"))
+
+
+# ---------------------------------------------------------------------------
+# Market insights / guides (Phase 5)
+# ---------------------------------------------------------------------------
+
+def _insight_card(a):
+    tag = e(a["category"]) + (f' · {e(a["area"])}' if a["area"] else "")
+    return f"""<article class="ins-card">
+  <span class="ins-cat">{tag}</span>
+  <h3><a href="/insights/{a["id"]}">{e(a["title"])}</a></h3>
+  <p>{e(a["summary"] or "")}</p>
+  <a class="muted-link" href="/insights/{a["id"]}">Read →</a>
+</article>"""
+
+
+def _insight_body_html(body):
+    blocks = [b for b in str(body or "").split("\n\n") if b.strip()]
+    return "".join(f"<p>{e(b).replace(chr(10), '<br>')}</p>" for b in blocks)
+
+
+def insights_page(req):
+    cat = req.q("category")
+    conn = get_conn()
+    sql = "SELECT * FROM insights WHERE status != 'hidden'"
+    args = []
+    if cat in INSIGHT_CATEGORIES:
+        sql += " AND category = ?"; args.append(cat)
+    sql += " ORDER BY featured DESC, created_at DESC"
+    rows = conn.execute(sql, args).fetchall()
+    conn.close()
+
+    chips = f'<a class="chip{"" if cat in INSIGHT_CATEGORIES else " active"}" href="/insights">All</a>'
+    for c in INSIGHT_CATEGORIES:
+        chips += (f'<a class="chip{" active" if cat == c else ""}" '
+                  f'href="/insights?category={urllib.parse.quote(c)}">{e(c)}</a>')
+    wa = _wa_url("Hi, I'd like guidance on the Jaipur property market. Please help.")
+    cards = "".join(_insight_card(a) for a in rows) or (
+        '<div class="empty">Fresh insights are on the way. Meanwhile, '
+        f'<a href="{wa}" target="_blank" rel="noopener">ask Realtor Vikkas directly</a>.</div>')
+    body = f"""
+<p class="eyebrow">Insights · Jaipur</p>
+<h1>Market insights &amp; buyer guides</h1>
+<p class="lead">Plain-English guidance on buying, renting and investing in Jaipur — title checks,
+JDA approvals, and how to weigh a decision. Factual help, no hype.</p>
+<div class="chips" style="margin:1.4rem 0">{chips}</div>
+<div class="ins-grid">{cards}</div>
+"""
+    return Response(layout("Market Insights", body, req,
+                           description="Jaipur real-estate insights and buyer guides from Realtor Vikkas — title checks, JDA approvals, buy vs rent.",
+                           canonical=SITE_BASE + "/insights"))
+
+
+def insight_detail(req, iid):
+    conn = get_conn()
+    a = conn.execute("SELECT * FROM insights WHERE id = ?", (iid,)).fetchone()
+    if not a or a["status"] == "hidden":
+        conn.close()
+        return not_found(req)
+    more = conn.execute(
+        "SELECT * FROM insights WHERE status != 'hidden' AND id != ? "
+        "ORDER BY featured DESC, created_at DESC LIMIT 3", (iid,)).fetchall()
+    conn.close()
+    src = f'<p class="lead" style="font-size:.82rem;margin-top:1.5rem">Source: {e(a["source"])}</p>' if a["source"] else ""
+    tag = e(a["category"]) + (f' · {e(a["area"])}' if a["area"] else "")
+    wa = _wa_url(f'Hi, I read "{a["title"]}" on realtorvikkas.com and would like to discuss.')
+    more_html = ""
+    if more:
+        more_html = ('<section class="detail-section"><h2>More insights</h2><div class="ins-grid">'
+                     + "".join(_insight_card(x) for x in more) + "</div></section>")
+    body = f"""
+<p><a class="muted-link" href="/insights">← All insights</a></p>
+<p class="eyebrow" style="margin-top:1rem">{tag}</p>
+<h1>{e(a["title"])}</h1>
+<p class="lead">{e(a["summary"] or "")}</p>
+<div class="article">{_insight_body_html(a["body"])}</div>
+{src}
+<div class="detail-actions" style="margin-top:1.6rem">
+  <a class="da-btn wa" href="{wa}" target="_blank" rel="noopener">💬 Ask Realtor Vikkas</a>
+  <a class="da-btn call" href="tel:{PHONE}">📞 Call Now</a>
+</div>
+{more_html}
+"""
+    return Response(layout(a["title"], body, req,
+                           description=(a["summary"] or a["title"]),
+                           canonical=SITE_BASE + f"/insights/{a['id']}"))
+
+
+# ---- Admin: market insights CRUD (same password admin) ----
+
+def admin_insights(req):
+    if not _admin_ok(req):
+        return redirect("/admin/login")
+    if req.method == "POST":
+        title = req.f("title")
+        if title:
+            conn = get_conn()
+            conn.execute(
+                "INSERT INTO insights (title, category, area, summary, body, source, status, featured, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (title, req.f("category") or "Guide", req.f("area"), req.f("summary"),
+                 req.f("body"), req.f("source"), "published",
+                 1 if req.f("featured") else 0, now()))
+            conn.commit()
+            conn.close()
+        return redirect("/admin/insights", msg="Insight added.")
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM insights ORDER BY id DESC").fetchall()
+    conn.close()
+    trs = ""
+    for a in rows:
+        toggle = "hidden" if a["status"] != "hidden" else "published"
+        tlabel = "Hide" if a["status"] != "hidden" else "Show"
+        trs += (
+            f"<tr><td>{e(a['title'])}</td><td>{e(a['category'])}</td><td>{e(a['area'] or '—')}</td>"
+            f"<td>{e(a['status'])}</td>"
+            f"<td><div style='display:flex;gap:0.3rem;align-items:center'>"
+            f"<a class='btn btn-ghost btn-sm' href='/insights/{a['id']}' target='_blank'>View</a>"
+            f"<form method='post' action='/admin/insights/{a['id']}/status'>"
+            f"<input type='hidden' name='to' value='{toggle}'>"
+            f"<button class='btn btn-ghost btn-sm' type='submit'>{tlabel}</button></form>"
+            f"<form method='post' action='/admin/insights/{a['id']}/delete' "
+            f"onsubmit=\"return confirm('Delete this insight permanently?')\">"
+            f"<button class='btn btn-ghost btn-sm' type='submit' style='color:#c0392b'>✕</button></form>"
+            f"</div></td></tr>")
+    trs = trs or "<tr><td colspan='5' class='empty'>No insights yet.</td></tr>"
+    body = f"""
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+  <div><p class="eyebrow">Admin</p><h1>📰 Market insights</h1></div>
+  <a class="btn btn-ghost btn-sm" href="/admin/logout">Log out</a>
+</div>
+<p class="lead" style="margin-bottom:1.2rem">{len(rows)} article(s). Add factual guidance or a real market note — never invented figures or guaranteed returns.</p>
+
+<form method="post" action="/admin/insights" class="card" style="margin-bottom:1.6rem">
+  <div class="consult-grid">
+    <div><label>Title *</label><input name="title" required></div>
+    <div><label>Category</label><select name="category">{opts(INSIGHT_CATEGORIES)}</select></div>
+    <div><label>Area (optional)</label><input name="area" placeholder="e.g. Jagatpura, Jaipur"></div>
+    <div><label>Source (optional)</label><input name="source" placeholder="e.g. JDA notification, your own data"></div>
+  </div>
+  <div style="margin-top:0.8rem"><label>Summary (one line)</label><input name="summary"></div>
+  <div style="margin-top:0.8rem"><label>Body (blank line = new paragraph)</label><textarea name="body" rows="7"></textarea></div>
+  <label style="display:flex;align-items:center;gap:0.4rem;margin-top:0.8rem;font-size:0.85rem"><input type="checkbox" name="featured" value="1" style="width:auto"> Feature on top</label>
+  <button class="btn btn-brass" type="submit" style="margin-top:1rem">Publish insight</button>
+</form>
+
+<div class="table-wrap"><table class="data">
+  <thead><tr><th>Title</th><th>Category</th><th>Area</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>{trs}</tbody>
+</table></div>
+"""
+    return Response(layout("Insights · Admin", body, req))
+
+
+def admin_insight_status(req, iid):
+    if not _admin_ok(req):
+        return redirect("/admin/login")
+    to = req.f("to")
+    if to in ("published", "hidden"):
+        conn = get_conn()
+        conn.execute("UPDATE insights SET status = ? WHERE id = ?", (to, iid))
+        conn.commit()
+        conn.close()
+    return redirect("/admin/insights", msg="Updated.")
+
+
+def admin_insight_delete(req, iid):
+    if not _admin_ok(req):
+        return redirect("/admin/login")
+    conn = get_conn()
+    conn.execute("DELETE FROM insights WHERE id = ?", (iid,))
+    conn.commit()
+    conn.close()
+    return redirect("/admin/insights", msg="Insight deleted.")
+
+
+# ---------------------------------------------------------------------------
 # SEO: sitemap.xml + robots.txt
 # ---------------------------------------------------------------------------
 
@@ -1898,6 +2296,8 @@ def sitemap_xml(req):
         "SELECT id, created_at FROM properties WHERE status != 'hidden' ORDER BY id").fetchall()
     invs = conn.execute(
         "SELECT id, created_at FROM investments WHERE status != 'hidden' ORDER BY id").fetchall()
+    ins = conn.execute(
+        "SELECT id, created_at FROM insights WHERE status != 'hidden' ORDER BY id").fetchall()
     conn.close()
 
     def url(loc, priority, lastmod=None):
@@ -1910,11 +2310,15 @@ def sitemap_xml(req):
              url(SITE_BASE + "/", "1.0"),
              url(SITE_BASE + "/properties", "0.9"),
              url(SITE_BASE + "/invest", "0.8"),
+             url(SITE_BASE + "/insights", "0.7"),
+             url(SITE_BASE + "/emi", "0.5"),
              url(SITE_BASE + "/terms", "0.3")]
     for r in rows:
         parts.append(url(SITE_BASE + f"/property/{r['id']}", "0.8", (r["created_at"] or "")[:10]))
     for r in invs:
         parts.append(url(SITE_BASE + f"/invest/{r['id']}", "0.7", (r["created_at"] or "")[:10]))
+    for r in ins:
+        parts.append(url(SITE_BASE + f"/insights/{r['id']}", "0.6", (r["created_at"] or "")[:10]))
     parts.append("</urlset>")
     return Response("".join(parts), content_type="application/xml; charset=utf-8")
 
@@ -2068,6 +2472,14 @@ def dispatch(req):
         return invest_enquiry(req)
     if path.startswith("/invest/") and m == "GET":
         return invest_detail(req, _int(path.rsplit("/", 1)[1]))
+    if path == "/compare" and m == "GET":
+        return compare_page(req)
+    if path == "/emi" and m == "GET":
+        return emi_page(req)
+    if path == "/insights" and m == "GET":
+        return insights_page(req)
+    if path.startswith("/insights/") and m == "GET":
+        return insight_detail(req, _int(path.rsplit("/", 1)[1]))
     if path == "/api/sync-listings" and m == "POST":
         return sync_listings(req)
     if path == "/sitemap.xml" and m == "GET":
@@ -2140,6 +2552,12 @@ def dispatch(req):
         return admin_invest_status(req, _int(path.split("/")[3]))
     if path.startswith("/admin/investments/") and path.endswith("/delete") and m == "POST":
         return admin_invest_delete(req, _int(path.split("/")[3]))
+    if path == "/admin/insights":
+        return admin_insights(req)
+    if path.startswith("/admin/insights/") and path.endswith("/status") and m == "POST":
+        return admin_insight_status(req, _int(path.split("/")[3]))
+    if path.startswith("/admin/insights/") and path.endswith("/delete") and m == "POST":
+        return admin_insight_delete(req, _int(path.split("/")[3]))
     if path == "/api/leads" and m == "GET":
         return api_leads(req)
 

@@ -121,6 +121,19 @@ CREATE TABLE IF NOT EXISTS investments (
     featured    INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS insights (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT    NOT NULL,
+    category    TEXT    NOT NULL DEFAULT 'Guide',   -- Guide | Market Note | Locality | Investment
+    area        TEXT    DEFAULT '',                 -- optional locality/city
+    summary     TEXT    DEFAULT '',
+    body        TEXT    DEFAULT '',
+    source      TEXT    DEFAULT '',                 -- optional attribution for real data
+    status      TEXT    NOT NULL DEFAULT 'published', -- published | hidden
+    featured    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT    NOT NULL
+);
 """
 
 
@@ -160,6 +173,9 @@ def init_db():
     have_inv = conn.execute("SELECT COUNT(*) AS c FROM investments").fetchone()["c"]
     if not have_inv:
         _seed_investments(conn)
+    have_ins = conn.execute("SELECT COUNT(*) AS c FROM insights").fetchone()["c"]
+    if not have_ins:
+        _seed_insights(conn)
     ensure_accounts(conn)          # guarantee the real owner + client logins
     conn.close()
     return first_time
@@ -302,4 +318,47 @@ def _seed_investments(conn):
             "INSERT INTO investments (title, category, location, ticket, horizon, highlights, "
             "description, status, featured, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (title, cat, loc, ticket, horizon, highlights, desc, "active", 1, now()))
+    conn.commit()
+
+
+def _seed_insights(conn):
+    """Starter market-insight articles. FACTUAL, educational guidance only — NO invented
+    prices, ROI or market statistics. Vikkas adds real market notes via /admin/insights."""
+    guides = [
+        ("How to verify a clear title before buying in Jaipur", "Guide", "Jaipur",
+         "The document checks that protect you before you pay a rupee.",
+         "Before buying any property in Jaipur, confirm the chain of ownership and that the title is "
+         "clear and marketable.\n\n"
+         "• Ask for the last 13–30 years of title/ownership documents and check the chain is unbroken.\n"
+         "• Match the seller's name on the registry, the mutation (namantaran) and the latest tax receipts.\n"
+         "• For JDA/urban land, confirm the patta and approved layout; for agricultural land check the "
+         "khasra/khatauni and whether conversion (CLU) is needed.\n"
+         "• Get an Encumbrance Certificate to check for existing loans or charges on the property.\n"
+         "• Have a property lawyer do due diligence before you pay any advance.\n\n"
+         "This is general guidance — always take independent legal advice for your specific case."),
+        ("JDA approval & patta — what to check on a Jaipur plot", "Guide", "Jaipur",
+         "Approved, clear-title land vs. an unapproved colony: how to tell.",
+         "\"JDA-approved\" means the Jaipur Development Authority has sanctioned the layout of the "
+         "colony/scheme the plot sits in. It matters for loans, resale and construction approvals.\n\n"
+         "• Ask which scheme the plot is in and whether it is JDA/authorised and has an approved layout plan.\n"
+         "• Confirm the patta (title deed) is issued in the current owner's name.\n"
+         "• Check road width, setbacks and the plot's marking against the approved plan.\n"
+         "• Unapproved or 'krishi' (agricultural) plots can be cheaper but carry approval, loan and "
+         "regularisation risks — understand these before buying.\n\n"
+         "General educational information, not legal advice."),
+        ("Buy vs rent in Jaipur — questions to ask yourself", "Guide", "Jaipur",
+         "A simple framework to decide, without the hype.",
+         "There is no single right answer — it depends on your horizon, cash flow and goals.\n\n"
+         "• How long will you stay? Buying usually makes more sense the longer your horizon.\n"
+         "• Do you have the down payment plus registry, stamp duty and furnishing costs comfortably?\n"
+         "• Would the EMI stretch your monthly budget? (Use the EMI calculator on this site to check.)\n"
+         "• Is this a home to live in or an investment? Those are different decisions.\n"
+         "• Renting keeps you flexible; buying builds an asset but ties up capital.\n\n"
+         "Talk it through with Realtor Vikkas for guidance specific to your situation."),
+    ]
+    for (title, cat, area, summary, body) in guides:
+        conn.execute(
+            "INSERT INTO insights (title, category, area, summary, body, source, status, featured, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (title, cat, area, summary, body, "", "published", 1, now()))
     conn.commit()
