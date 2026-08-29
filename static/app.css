@@ -387,3 +387,26 @@ footer.app-foot { background: var(--indigo-deep); color: #8B96B3; font-size: 0.8
   width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--surface); }
 .disclaimer { margin-top: 2.4rem; padding: 1rem 1.2rem; background: var(--surface-2); border: 1px solid var(--rule);
   border-radius: 8px; font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+
+/* --- Mobile-first polish + performance --- */
+html, body { overflow-x: hidden; }         /* never allow a sideways scroll */
+img, iframe { max-width: 100%; }
+
+/* Lazy map facade (loads the real map only on tap) */
+.map-facade { cursor: pointer; background: linear-gradient(160deg, var(--indigo), var(--indigo-deep));
+  min-height: 220px; display: flex; align-items: center; justify-content: center; }
+.map-facade-inner { color: #EDEFF5; display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+  font-size: 0.9rem; }
+.map-pin { font-size: 1.8rem; }
+.map-facade:hover .map-facade-inner { color: var(--brass-bright); }
+
+@media (max-width: 600px) {
+  .page { padding-bottom: 6rem; }          /* clear the floating buttons */
+  .app-foot { padding-bottom: 5rem; }
+  .page h1 { font-size: 1.55rem; }
+  .detail-section h2, .sec-head h2 { font-size: 1.25rem; }
+  .da-btn { flex: 1 1 auto; justify-content: center; padding: 12px 14px; }
+  .callback-fab { padding: 0.55rem 0.85rem !important; font-size: 0.82rem !important; }
+  .topnav { gap: 0.9rem; font-size: 0.85rem; }
+  .btn { padding: 0.7rem 1.1rem; }         /* comfortable tap targets */
+}
