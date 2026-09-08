@@ -63,8 +63,8 @@ def _wa_url(text=""):
     base = "https://wa.me/" + WHATSAPP
     return base + ("?text=" + urllib.parse.quote(text) if text else "")
 
-CITIES = ["Jaipur", "Udaipur", "Jodhpur", "Delhi NCR", "Ahmedabad",
-          "Gandhinagar", "Shimla", "Manali"]
+CITIES = ["Jaipur", "Udaipur", "Jodhpur", "Gurugram", "Noida",
+          "Vrindavan", "Dholera", "Uttarakhand", "Goa"]
 PTYPES = ["Villa", "Plot", "Flat", "Townhouse", "Commercial"]
 
 # Price bands for the search filter (INR value, label) — used for Min/Max selects.

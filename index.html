@@ -609,9 +609,9 @@
   <section class="hero">
     <div class="wrap">
       <div>
-        <p class="eyebrow on-dark">Rajasthan · Delhi · Gujarat · Himachal</p>
+        <p class="eyebrow on-dark">Rajasthan · Gurugram · Gujarat · Uttarakhand · UP · Goa</p>
         <h1>Property in Jaipur,<br>entered in the register.</h1>
-        <p class="lead">Plots, villas, townhouses and flats — with <span class="hl">Jaipur at the centre of the ledger</span>, and listings reaching Delhi NCR, Gujarat and the Himachal hills.</p>
+        <p class="lead">Plots, villas, townhouses and flats — with <span class="hl">Jaipur at the centre of the ledger</span>, and the register expanding to Gurugram, Gujarat, Uttarakhand, Vrindavan and Goa.</p>
 
         <form class="finder" method="get" action="/properties">
           <div class="finder-tabs" role="tablist">
@@ -626,11 +626,12 @@
               <option value="Jaipur">Jaipur, Rajasthan</option>
               <option value="Udaipur">Udaipur, Rajasthan</option>
               <option value="Jodhpur">Jodhpur, Rajasthan</option>
-              <option value="Delhi NCR">Delhi NCR</option>
-              <option value="Ahmedabad">Ahmedabad, Gujarat</option>
-              <option value="Gandhinagar">Gandhinagar, Gujarat</option>
-              <option value="Shimla">Shimla, Himachal Pradesh</option>
-              <option value="Manali">Manali, Himachal Pradesh</option>
+              <option value="Gurugram">Gurugram, Haryana</option>
+              <option value="Noida">Noida, UP</option>
+              <option value="Vrindavan">Vrindavan, UP</option>
+              <option value="Dholera">Dholera, Gujarat</option>
+              <option value="Uttarakhand">Uttarakhand</option>
+              <option value="Goa">Goa</option>
             </select>
             <input type="text" name="q" placeholder="Locality, project or khasra no." />
             <button class="btn btn-brass" type="submit">Search the Register</button>
@@ -639,31 +640,36 @@
       </div>
 
       <div class="map-panel">
-        <svg viewBox="0 0 240 300" role="img" aria-labelledby="mapTitle">
+        <svg viewBox="0 0 260 300" role="img" aria-labelledby="mapTitle">
           <title id="mapTitle">Schematic network of Real Estate Solutions regions, centred on Jaipur</title>
-          <line x1="120" y1="170" x2="165" y2="62" stroke="#3C4A6E" stroke-width="1.5"/>
-          <line x1="120" y1="170" x2="55" y2="245" stroke="#3C4A6E" stroke-width="1.5"/>
-          <line x1="120" y1="170" x2="140" y2="24" stroke="#3C4A6E" stroke-width="1.5"/>
-
-          <g class="map-node">
-            <circle cx="165" cy="62" r="5" fill="#8FA0C7"/>
-            <text x="175" y="60">Delhi NCR</text>
+          <!-- connections (dashed = expanding network / planned reach) -->
+          <g stroke="#3C4A6E" stroke-width="1.2" stroke-dasharray="3 3">
+            <line x1="130" y1="150" x2="130" y2="32"/>
+            <line x1="130" y1="150" x2="196" y2="56"/>
+            <line x1="130" y1="150" x2="230" y2="110"/>
+            <line x1="130" y1="150" x2="232" y2="176"/>
+            <line x1="130" y1="150" x2="190" y2="268"/>
+            <line x1="130" y1="150" x2="108" y2="276"/>
+            <line x1="130" y1="150" x2="46"  y2="242"/>
+            <line x1="130" y1="150" x2="36"  y2="150"/>
           </g>
-          <g class="map-node">
-            <circle cx="55" cy="245" r="5" fill="#8FA0C7"/>
-            <text x="65" y="248">Ahmedabad</text>
-          </g>
-          <g class="map-node">
-            <circle cx="140" cy="24" r="5" fill="#8FA0C7"/>
-            <text x="150" y="22">Shimla</text>
-          </g>
+          <!-- outer regions -->
+          <g class="map-node"><circle cx="130" cy="32"  r="5" fill="#8FA0C7"/><text x="130" y="22"  text-anchor="middle">Uttarakhand</text></g>
+          <g class="map-node"><circle cx="196" cy="56"  r="5" fill="#8FA0C7"/><text x="196" y="46"  text-anchor="middle">Gurugram</text></g>
+          <g class="map-node"><circle cx="230" cy="110" r="5" fill="#8FA0C7"/><text x="222" y="110" text-anchor="end">Noida</text></g>
+          <g class="map-node"><circle cx="232" cy="176" r="5" fill="#8FA0C7"/><text x="224" y="179" text-anchor="end">Vrindavan</text></g>
+          <g class="map-node"><circle cx="190" cy="268" r="5" fill="#8FA0C7"/><text x="190" y="284" text-anchor="middle">Goa</text></g>
+          <g class="map-node"><circle cx="108" cy="276" r="5" fill="#8FA0C7"/><text x="108" y="290" text-anchor="middle">Udaipur</text></g>
+          <g class="map-node"><circle cx="46"  cy="242" r="5" fill="#8FA0C7"/><text x="46"  y="258" text-anchor="middle">Dholera</text></g>
+          <g class="map-node"><circle cx="36"  cy="150" r="5" fill="#8FA0C7"/><text x="40"  y="167" text-anchor="middle">Jodhpur</text></g>
+          <!-- hub: Jaipur -->
           <g class="map-node hub">
-            <circle cx="120" cy="170" r="8" fill="none" stroke="#E0A94A" stroke-width="2"/>
-            <circle cx="120" cy="170" r="3.5" fill="#E0A94A"/>
-            <text x="97" y="196">JAIPUR</text>
+            <circle cx="130" cy="150" r="8" fill="none" stroke="#E0A94A" stroke-width="2"/>
+            <circle cx="130" cy="150" r="3.5" fill="#E0A94A"/>
+            <text x="130" y="170" text-anchor="middle">JAIPUR</text>
           </g>
         </svg>
-        <p class="map-caption">A schematic of where the register runs — Jaipur at the centre.</p>
+        <p class="map-caption">A schematic of where the register runs — Jaipur at the centre, expanding across the country.</p>
       </div>
     </div>
   </section>
@@ -709,7 +715,7 @@
         <div>
           <p class="eyebrow">Freshly registered</p>
           <h2>New Entries</h2>
-          <p>Listings added to the ledger this month, across all four regions.</p>
+          <p>Listings added to the ledger this month, across every market on the register.</p>
         </div>
         <a class="see-all" href="/properties">See all entries →</a>
       </div>
@@ -734,28 +740,24 @@
         <div class="register-col reveal">
           <svg class="icon" width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="10" height="10"/><rect x="16" y="4" width="10" height="10"/><rect x="4" y="16" width="10" height="10"/><rect x="16" y="16" width="10" height="10"/></svg>
           <h3>Plot</h3>
-          <span class="register-count tabular">340 listings on the register</span>
           <span class="register-price tabular">₹15 L – ₹2.5 Cr</span>
           <span class="register-areas">Vaishali Nagar · Mansarovar · Jagatpura</span>
         </div>
         <div class="register-col reveal">
           <svg class="icon" width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 15 15 6l11 9"/><rect x="7" y="15" width="16" height="10"/><path d="M13 25v-6h4v6"/></svg>
           <h3>Villa</h3>
-          <span class="register-count tabular">128 listings on the register</span>
           <span class="register-price tabular">₹85 L – ₹6 Cr</span>
           <span class="register-areas">Amer Road · Jagatpura · Sirsi Road</span>
         </div>
         <div class="register-col reveal">
           <svg class="icon" width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="10" width="8" height="15"/><rect x="13" y="5" width="8" height="20"/><rect x="21" y="12" width="4" height="13"/></svg>
           <h3>Townhouse</h3>
-          <span class="register-count tabular">96 listings on the register</span>
           <span class="register-price tabular">₹58 L – ₹2.2 Cr</span>
           <span class="register-areas">Vaishali Nagar · Ajmer Road</span>
         </div>
         <div class="register-col reveal">
           <svg class="icon" width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="4" width="16" height="22"/><path d="M11 9h2M17 9h2M11 14h2M17 14h2M11 19h2M17 19h2"/></svg>
           <h3>Flat</h3>
-          <span class="register-count tabular">512 listings on the register</span>
           <span class="register-price tabular">₹32 L – ₹1.4 Cr</span>
           <span class="register-areas">Mansarovar · Malviya Nagar · Jagatpura</span>
         </div>
@@ -768,7 +770,7 @@
       <div class="block-head reveal">
         <div>
           <p class="eyebrow">Where we operate</p>
-          <h2>Four Regions, One Desk</h2>
+          <h2>Jaipur &amp; Beyond, One Desk</h2>
           <p>Every listing is site-verified by someone who has actually walked the plot.</p>
         </div>
       </div>
@@ -778,25 +780,37 @@
           <svg class="icon" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 22 10 8l6 10 4-6 4 10"/></svg>
           <h3>Rajasthan</h3>
           <div class="region-chips"><span>Jaipur</span><span>Udaipur</span><span>Jodhpur</span></div>
-          <span class="region-count tabular">6,120 listings →</span>
+          <a class="region-count" href="/properties?city=Jaipur">Explore →</a>
         </article>
         <article class="region-card reveal">
           <svg class="icon" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="6" width="8" height="18"/><rect x="15" y="10" width="8" height="14"/></svg>
-          <h3>Delhi NCR</h3>
-          <div class="region-chips"><span>Delhi</span><span>Gurugram</span><span>Noida</span></div>
-          <span class="region-count tabular">3,480 listings →</span>
+          <h3>Haryana</h3>
+          <div class="region-chips"><span>Gurugram</span></div>
+          <a class="region-count" href="/properties?city=Gurugram">Explore →</a>
+        </article>
+        <article class="region-card reveal">
+          <svg class="icon" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="6" width="8" height="18"/><rect x="15" y="10" width="8" height="14"/></svg>
+          <h3>Uttar Pradesh</h3>
+          <div class="region-chips"><span>Noida</span><span>Vrindavan</span></div>
+          <a class="region-count" href="/properties?city=Vrindavan">Explore →</a>
         </article>
         <article class="region-card reveal">
           <svg class="icon" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="14" cy="14" r="9"/><path d="M14 5v18M5 14h18"/></svg>
           <h3>Gujarat</h3>
-          <div class="region-chips"><span>Ahmedabad</span><span>Gandhinagar</span><span>Surat</span></div>
-          <span class="region-count tabular">2,260 listings →</span>
+          <div class="region-chips"><span>Dholera</span><span>Ahmedabad</span></div>
+          <a class="region-count" href="/properties?city=Dholera">Explore →</a>
         </article>
         <article class="region-card reveal">
           <svg class="icon" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 22 9 10l4 6 3-5 9 11"/></svg>
-          <h3>Himachal Pradesh</h3>
-          <div class="region-chips"><span>Shimla</span><span>Manali</span><span>Kasauli</span></div>
-          <span class="region-count tabular">540 listings →</span>
+          <h3>Uttarakhand</h3>
+          <div class="region-chips"><span>Dehradun</span><span>Rishikesh</span></div>
+          <a class="region-count" href="/properties?city=Uttarakhand">Explore →</a>
+        </article>
+        <article class="region-card reveal">
+          <svg class="icon" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20h20M6 20a8 8 0 0 1 16 0M14 5v7"/></svg>
+          <h3>Goa</h3>
+          <div class="region-chips"><span>North Goa</span><span>South Goa</span></div>
+          <a class="region-count" href="/properties?city=Goa">Explore →</a>
         </article>
       </div>
     </div>
@@ -811,10 +825,10 @@
       <div class="stamp-row">
         <div class="reveal">
           <div class="stamp">
-            <span class="num tabular">12.4K+</span>
-            <span class="unit">Properties</span>
+            <span class="num tabular">6</span>
+            <span class="unit">Regions &amp; Growing</span>
           </div>
-          <p class="stamp-cap">Entries on the register, across Rajasthan, Delhi, Gujarat &amp; Himachal.</p>
+          <p class="stamp-cap">Rajasthan, Gurugram, Gujarat, Uttarakhand, UP (Vrindavan) &amp; Goa.</p>
         </div>
         <div class="reveal">
           <div class="stamp">
@@ -825,8 +839,8 @@
         </div>
         <div class="reveal">
           <div class="stamp">
-            <span class="num tabular">18</span>
-            <span class="unit">Years, Four Regions</span>
+            <span class="num tabular">5</span>
+            <span class="unit">Years Serving</span>
           </div>
           <p class="stamp-cap">Serving buyers, sellers and tenants since the desk opened in Jaipur.</p>
         </div>
@@ -852,8 +866,8 @@
           <p class="quote-attr"><b>K. Patel</b> — rented a flat, Ahmedabad</p>
         </div>
         <div class="quote-card reveal">
-          <p class="quote">"They knew the Kasauli land records better than the local patwari. Closed in six weeks."</p>
-          <p class="quote-attr"><b>N. Thakur</b> — bought land, Himachal Pradesh</p>
+          <p class="quote">"They knew the Dehradun land records better than the local patwari. Closed in six weeks."</p>
+          <p class="quote-attr"><b>N. Thakur</b> — bought land, Uttarakhand</p>
         </div>
       </div>
     </div>
@@ -866,7 +880,7 @@
     <div class="footer-top">
       <div class="footer-brand">
         <span class="brand-mark" style="font-family:var(--font-display); font-size:1.4rem;">Real Estate Solutions</span>
-        <p class="footer-tag">A property register for Rajasthan, Delhi, Gujarat &amp; Himachal Pradesh — with Jaipur at the centre.</p>
+        <p class="footer-tag">A property register centred on Jaipur — reaching Rajasthan, Gurugram, Gujarat, Uttarakhand, UP &amp; Goa.</p>
       </div>
       <div>
         <h4>Explore</h4>
@@ -882,9 +896,11 @@
         <h4>Regions</h4>
         <ul>
           <li><a href="/properties?city=Jaipur">Rajasthan</a></li>
-          <li><a href="/properties?city=Delhi+NCR">Delhi NCR</a></li>
-          <li><a href="/properties?city=Ahmedabad">Gujarat</a></li>
-          <li><a href="/properties?city=Shimla">Himachal Pradesh</a></li>
+          <li><a href="/properties?city=Gurugram">Gurugram</a></li>
+          <li><a href="/properties?city=Vrindavan">Uttar Pradesh</a></li>
+          <li><a href="/properties?city=Dholera">Gujarat</a></li>
+          <li><a href="/properties?city=Uttarakhand">Uttarakhand</a></li>
+          <li><a href="/properties?city=Goa">Goa</a></li>
         </ul>
       </div>
       <div>
@@ -903,7 +919,7 @@
     </div>
     <div class="footer-bottom">
       <span>© 2026 Real Estate Solutions. All listings illustrative — sample register for demonstration.</span>
-      <span>Rajasthan · Delhi · Gujarat · Himachal Pradesh</span>
+      <span>Rajasthan · Gurugram · Gujarat · Uttarakhand · UP · Goa</span>
     </div>
   </div>
 </footer>
