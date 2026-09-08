@@ -311,7 +311,7 @@ def layout(title, body, req, active="", description=None, canonical=None,
 {flash}
 {body}
 </main>
-<footer class="app-foot">Real Estate Solutions — Land &amp; homes across Rajasthan, Delhi, Gujarat &amp; the Himalayas.</footer>
+<footer class="app-foot">Real Estate Solutions — property across Jaipur, Rajasthan, Gurugram, Gujarat, Uttarakhand, UP &amp; Goa.</footer>
 {floats}
 {callback}
 </body>
@@ -796,7 +796,7 @@ def auth_aside(role):
     else:
         head = "Find your next home, land or investment with confidence."
         points = [
-            "Browse verified listings across Rajasthan, Delhi NCR &amp; Gujarat.",
+            "Browse verified listings across Rajasthan, Gurugram, Gujarat, Uttarakhand, UP &amp; Goa.",
             "Save your favourites and revisit them anytime.",
             "Enquire directly and hear back from the owner.",
         ]
@@ -813,7 +813,7 @@ def auth_aside(role):
       <h2>{head}</h2>
       <ul class="auth-points">{lis}</ul>
     </div>
-    <div class="auth-aside-foot">Trusted by buyers &amp; owners across Rajasthan, Delhi NCR, Gujarat &amp; the Himalayas.</div>
+    <div class="auth-aside-foot">Trusted by buyers &amp; owners across Rajasthan, Gurugram, Gujarat, Uttarakhand, UP &amp; Goa.</div>
   </aside>"""
 
 
@@ -1524,7 +1524,7 @@ def admin_login(req):
 <div style="max-width:380px;margin:3rem auto">
   <p class="eyebrow">Staff only</p>
   <h1>Admin sign in</h1>
-  <p class="lead" style="margin-bottom:1.2rem">Sign in to the Leads CRM.</p>
+  <p class="lead" style="margin-bottom:1.2rem">Sign in to manage leads, investments and insights.</p>
   {note}
   <form method="post" action="/admin/login" class="card" style="padding:1.5rem">
     <div style="margin-bottom:0.8rem"><label>Username</label><input name="username" required autofocus></div>
@@ -1537,6 +1537,25 @@ def admin_login(req):
 
 def admin_logout(req):
     return redirect("/admin/login", msg="Signed out.").set_cookie("admin", "", delete=True)
+
+
+def _admin_nav(active=""):
+    """Shared admin toolbar so the Leads / Investments / Insights sections link to each other."""
+    items = [("leads", "/admin/leads", "📇 Leads"),
+             ("investments", "/admin/investments", "💼 Investments"),
+             ("insights", "/admin/insights", "📰 Insights")]
+    links = "".join(
+        f'<a class="btn btn-sm {"btn-brass" if active == k else "btn-ghost"}" href="{u}">{lbl}</a>'
+        for k, u, lbl in items)
+    return (
+        '<div class="admin-bar" style="display:flex;justify-content:space-between;align-items:center;'
+        'flex-wrap:wrap;gap:0.6rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--rule)">'
+        '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center">'
+        '<span style="font-family:var(--font-display);font-size:1.05rem;margin-right:0.4rem">⚙️ Admin</span>'
+        f'{links}</div>'
+        '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">'
+        '<a class="btn btn-ghost btn-sm" href="/" target="_blank" rel="noopener">View site ↗</a>'
+        '<a class="btn btn-ghost btn-sm" href="/admin/logout">Log out</a></div></div>')
 
 
 def admin_leads(req):
@@ -1569,10 +1588,8 @@ def admin_leads(req):
     trs = trs or "<tr><td colspan='6' class='empty'>No leads yet.</td></tr>"
     new_n = sum(1 for l in rows if l["status"] == "New")
     body = f"""
-<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
-  <div><p class="eyebrow">Admin</p><h1>📇 Leads CRM</h1></div>
-  <a class="btn btn-ghost btn-sm" href="/admin/logout">Log out</a>
-</div>
+{_admin_nav("leads")}
+<h1 style="margin-bottom:0.2rem">📇 Leads CRM</h1>
 <p class="lead" style="margin-bottom:1.5rem">{len(rows)} lead(s) · {new_n} new · latest first.</p>
 <div class="table-wrap"><table class="data">
   <thead><tr><th>Name</th><th>Phone</th><th>Property</th><th>Message</th><th>Status</th><th>Date</th></tr></thead>
@@ -1885,10 +1902,8 @@ def admin_investments(req):
     trs = trs or "<tr><td colspan='6' class='empty'>No opportunities yet.</td></tr>"
     catopts = opts(INVEST_CATEGORIES)
     body = f"""
-<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
-  <div><p class="eyebrow">Admin</p><h1>💼 Investment opportunities</h1></div>
-  <a class="btn btn-ghost btn-sm" href="/admin/logout">Log out</a>
-</div>
+{_admin_nav("investments")}
+<h1 style="margin-bottom:0.2rem">💼 Investment opportunities</h1>
 <p class="lead" style="margin-bottom:1.2rem">{len(rows)} opportunit{"y" if len(rows)==1 else "ies"}. Add real ones here — leave prices blank to show “On request”. Do not enter guaranteed returns.</p>
 
 <form method="post" action="/admin/investments" class="card" style="margin-bottom:1.6rem">
@@ -2237,10 +2252,8 @@ def admin_insights(req):
             f"</div></td></tr>")
     trs = trs or "<tr><td colspan='5' class='empty'>No insights yet.</td></tr>"
     body = f"""
-<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
-  <div><p class="eyebrow">Admin</p><h1>📰 Market insights</h1></div>
-  <a class="btn btn-ghost btn-sm" href="/admin/logout">Log out</a>
-</div>
+{_admin_nav("insights")}
+<h1 style="margin-bottom:0.2rem">📰 Market insights</h1>
 <p class="lead" style="margin-bottom:1.2rem">{len(rows)} article(s). Add factual guidance or a real market note — never invented figures or guaranteed returns.</p>
 
 <form method="post" action="/admin/insights" class="card" style="margin-bottom:1.6rem">
