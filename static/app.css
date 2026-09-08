@@ -192,7 +192,7 @@ textarea { resize: vertical; min-height: 96px; }
   border: 1.5px solid var(--rule-strong); border-radius: 8px; padding: 0.5rem 0.8rem 0.55rem;
   transition: border-color 0.15s, box-shadow 0.15s; background: var(--surface); margin-bottom: 1rem;
 }
-.boxed-field:focus-within { border-color: var(--login-blue); box-shadow: 0 0 0 3px rgba(43,108,176,0.14); }
+.boxed-field:focus-within { border-color: var(--login-blue); box-shadow: 0 0 0 3px rgba(201,162,75,0.18); }
 .boxed-field > .bf-label { font-size: 0.72rem; font-weight: 600; color: var(--login-blue); letter-spacing: 0.02em; margin-bottom: 0.1rem; }
 .boxed-field .bf-row { display: flex; align-items: center; gap: 0.4rem; }
 .boxed-field select, .boxed-field input {
@@ -202,15 +202,16 @@ textarea { resize: vertical; min-height: 96px; }
 .boxed-field .ccode { flex: none; width: auto; border-right: 1px solid var(--rule); padding-right: 0.55rem; color: var(--ink); }
 .boxed-field .pw-toggle { position: static; }
 
-:root { --login-blue: #2b6cb0; --login-blue-bright: #3a80c9; }
-@media (prefers-color-scheme: dark) { :root { --login-blue: #4d94d6; --login-blue-bright: #66a6e0; } }
+/* Login accent mapped to the luxury gold (was blue) */
+:root { --login-blue: var(--brass); --login-blue-bright: var(--brass-bright); }
 
 .btn-continue {
-  width: 100%; background: var(--login-blue); color: #fff; border: none; border-radius: 8px;
+  width: 100%; background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+  color: #1b1305; border: none; border-radius: 8px;
   padding: 0.8rem; font-size: 0.95rem; font-weight: 700; cursor: pointer; margin-top: 0.4rem;
   transition: background 0.15s, transform 0.12s;
 }
-.btn-continue:hover { background: var(--login-blue-bright); transform: translateY(-1px); }
+.btn-continue:hover { background: var(--brass-bright); color: #140d00; transform: translateY(-1px); }
 .btn-outline {
   width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   background: var(--surface); color: var(--ink); border: 1.5px solid var(--rule-strong);
