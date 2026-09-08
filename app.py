@@ -294,6 +294,9 @@ def layout(title, body, req, active="", description=None, canonical=None,
 <meta property="og:description" content="{desc}">
 <meta property="og:url" content="{canon}">{og_img}
 <meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="/static/app.css?v={_ASSET_V}">
 {head_extra}
 </head>
@@ -1763,7 +1766,7 @@ clear picture. No hype, no guaranteed-return promises.</p>
 
 <p class="disclaimer">{INVEST_DISCLAIMER}</p>
 """
-    seo_title = "Property Investment & Resorts in Jaipur — Real Estate Solutions"
+    seo_title = "Property Investment & Resorts in Jaipur"
     seo_desc = ("Invest in Jaipur real estate — plots, pre-launch homes, rental-yield commercial and "
                 "resort / second-home opportunities, shortlisted and due-diligence-checked by "
                 "Real Estate Solutions. Request a free, no-obligation consultation.")
@@ -1834,7 +1837,7 @@ def invest_detail(req, iid):
 <p class="disclaimer">{INVEST_DISCLAIMER}</p>
 {sim_html}
 """
-    seo_title = f'{iv["title"]} — Investment in {iv["location"] or "Jaipur"} | Real Estate Solutions'
+    seo_title = f'{iv["title"]} — Investment in {iv["location"] or "Jaipur"}'
     seo_desc = (f'{iv["category"]} investment opportunity in {iv["location"] or "Jaipur"}. '
                 + (iv["description"][:150].strip() if iv["description"] else "")).strip()
     return Response(layout(seo_title, body, req, description=seo_desc,

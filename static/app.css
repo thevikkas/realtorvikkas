@@ -1,37 +1,30 @@
 /* Real Estate Solutions — shared app styling for the live site, owner & customer panels.
    Palette lifted from the marketing landing page so everything reads as one system. */
 
+/* Luxury / premium dark theme — deep navy-black + gold, elegant serif. One dark
+   identity for all viewers (the brand is intentionally dark), themed via tokens. */
 :root {
-  --bg: #EDEFF0;
-  --surface: #FFFFFF;
-  --surface-2: #F3F5F6;
-  --ink: #1B1E24;
-  --muted: #5C6373;
-  --rule: #D8DBDE;
-  --rule-strong: #C2C6CB;
-  --indigo: #1B2A4A;
-  --indigo-deep: #101A30;
-  --brass: #A6701B;
-  --brass-bright: #C98A2B;
-  --ok: #1f7a4d;
-  --ok-bg: #e3f3ea;
-  --warn: #9a6a12;
-  --warn-bg: #fbf0da;
-  --err: #a12828;
-  --err-bg: #f7e3e3;
-  --shadow: 0 18px 40px -24px rgba(16, 26, 48, 0.35);
-  --font-display: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --bg: #0C1119;
+  --surface: #141B26;
+  --surface-2: #1C2431;
+  --ink: #ECEAE2;
+  --muted: #98A2B2;
+  --rule: #27313F;
+  --rule-strong: #3A4655;
+  --indigo: #10161F;
+  --indigo-deep: #070B12;
+  --brass: #C9A24B;
+  --brass-bright: #E7CE86;
+  --ok: #5fbe8a;
+  --ok-bg: #10261b;
+  --warn: #e0b25a;
+  --warn-bg: #2c2513;
+  --err: #e08a8a;
+  --err-bg: #301c1c;
+  --shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.8);
+  --font-display: "Playfair Display", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #10131C; --surface: #171B27; --surface-2: #1D2230; --ink: #E7E9EE;
-    --muted: #9AA1B2; --rule: #2A2F3F; --rule-strong: #383F53; --indigo: #212C46;
-    --indigo-deep: #0A0E17; --brass: #E0A94A; --brass-bright: #F0BE66;
-    --ok: #6fd39d; --ok-bg: #163124; --warn: #e6b357; --warn-bg: #31280f;
-    --err: #e88; --err-bg: #331b1b;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -199,7 +192,7 @@ textarea { resize: vertical; min-height: 96px; }
   border: 1.5px solid var(--rule-strong); border-radius: 8px; padding: 0.5rem 0.8rem 0.55rem;
   transition: border-color 0.15s, box-shadow 0.15s; background: var(--surface); margin-bottom: 1rem;
 }
-.boxed-field:focus-within { border-color: var(--login-blue); box-shadow: 0 0 0 3px rgba(43,108,176,0.14); }
+.boxed-field:focus-within { border-color: var(--login-blue); box-shadow: 0 0 0 3px rgba(201,162,75,0.18); }
 .boxed-field > .bf-label { font-size: 0.72rem; font-weight: 600; color: var(--login-blue); letter-spacing: 0.02em; margin-bottom: 0.1rem; }
 .boxed-field .bf-row { display: flex; align-items: center; gap: 0.4rem; }
 .boxed-field select, .boxed-field input {
@@ -209,15 +202,16 @@ textarea { resize: vertical; min-height: 96px; }
 .boxed-field .ccode { flex: none; width: auto; border-right: 1px solid var(--rule); padding-right: 0.55rem; color: var(--ink); }
 .boxed-field .pw-toggle { position: static; }
 
-:root { --login-blue: #2b6cb0; --login-blue-bright: #3a80c9; }
-@media (prefers-color-scheme: dark) { :root { --login-blue: #4d94d6; --login-blue-bright: #66a6e0; } }
+/* Login accent mapped to the luxury gold (was blue) */
+:root { --login-blue: var(--brass); --login-blue-bright: var(--brass-bright); }
 
 .btn-continue {
-  width: 100%; background: var(--login-blue); color: #fff; border: none; border-radius: 8px;
+  width: 100%; background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+  color: #1b1305; border: none; border-radius: 8px;
   padding: 0.8rem; font-size: 0.95rem; font-weight: 700; cursor: pointer; margin-top: 0.4rem;
   transition: background 0.15s, transform 0.12s;
 }
-.btn-continue:hover { background: var(--login-blue-bright); transform: translateY(-1px); }
+.btn-continue:hover { background: var(--brass-bright); color: #140d00; transform: translateY(-1px); }
 .btn-outline {
   width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   background: var(--surface); color: var(--ink); border: 1.5px solid var(--rule-strong);
@@ -304,14 +298,18 @@ footer.app-foot { background: var(--indigo-deep); color: #8B96B3; font-size: 0.8
 
 /* --- WhatsApp / Call CTAs (Phase 1) --- */
 .prop-actions { display: flex; gap: 6px; margin-top: 12px; }
-.pa-btn { flex: 1; text-align: center; font-size: 0.8rem; font-weight: 600; padding: 8px 6px;
-  border-radius: 8px; border: 1px solid var(--rule); color: var(--indigo); text-decoration: none;
+.pa-btn { flex: 1; text-align: center; font-size: 0.8rem; font-weight: 700; padding: 9px 6px;
+  border-radius: 8px; border: 1px solid var(--rule-strong); color: var(--ink); text-decoration: none;
   transition: background .15s, color .15s, border-color .15s; }
-.pa-btn:hover { background: var(--indigo); color: #fff; border-color: var(--indigo); }
-.pa-btn.wa { color: #128C4B; border-color: #bfe6cf; }
-.pa-btn.wa:hover { background: #25D366; color: #fff; border-color: #25D366; }
-.pa-btn.call { color: var(--brass); }
-.pa-btn.call:hover { background: var(--brass); color: #fff; border-color: var(--brass); }
+.pa-btn:hover { background: var(--surface-2); color: #fff; border-color: var(--brass); }
+/* View = primary gold CTA so it stands out on the dark card */
+.pa-btn.view { background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+  color: #1b1305; border-color: var(--brass); }
+.pa-btn.view:hover { background: var(--brass-bright); color: #140d00; border-color: var(--brass-bright); }
+.pa-btn.wa { color: #34D07A; border-color: rgba(52,208,122,0.40); }
+.pa-btn.wa:hover { background: #25D366; color: #05230f; border-color: #25D366; }
+.pa-btn.call { color: var(--brass-bright); }
+.pa-btn.call:hover { background: var(--brass); color: #1b1305; border-color: var(--brass); }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 4px; }
 .da-btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; padding: 12px 20px;
   border-radius: 10px; text-decoration: none; font-size: 0.95rem; transition: opacity .2s, transform .2s; }
@@ -484,3 +482,24 @@ img, iframe { max-width: 100%; }
   .topbar .brand-sub{ font-size: 0.5rem; letter-spacing: 0.1em; margin-top: 0.1rem; }
   .topbar .wrap{ padding: 0.55rem 1.1rem; gap: 0.7rem; }
 }
+
+/* --- Luxury / premium refinements --- */
+.topbar { border-bottom: 1px solid rgba(201,162,75,0.16); }
+.brand-mark { letter-spacing: 0.015em; }
+.brand-sub { color: var(--brass); opacity: 0.8; }
+h1, h2 { letter-spacing: -0.005em; }
+.page h1 { font-weight: 600; }
+.btn-brass {
+  background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+  color: #1b1305; font-weight: 600;
+  box-shadow: 0 8px 20px -10px rgba(201,162,75,0.55);
+}
+.btn-brass:hover { filter: brightness(1.05); }
+.btn-ghost { background: var(--surface-2); border-color: var(--rule-strong); color: var(--ink); }
+.btn-ghost:hover { border-color: var(--brass); color: var(--brass-bright); }
+.card { background:
+  linear-gradient(180deg, rgba(231,206,134,0.02), rgba(255,255,255,0)) , var(--surface);
+  border-color: var(--rule); }
+.price { color: var(--brass-bright); }
+.eyebrow { color: var(--brass); }
+a.muted-link, .muted-link { color: var(--brass-bright); }
