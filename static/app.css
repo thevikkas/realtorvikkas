@@ -1,4 +1,4 @@
-/* Realtor Vikkas — shared app styling for the live site, owner & customer panels.
+/* Real Estate Solutions — shared app styling for the live site, owner & customer panels.
    Palette lifted from the marketing landing page so everything reads as one system. */
 
 :root {
@@ -477,3 +477,10 @@ img, iframe { max-width: 100%; }
 .ins-card .muted-link { color: var(--brass); font-weight: 600; font-size: 0.85rem; }
 .article { max-width: 68ch; margin: 1.2rem 0; }
 .article p { margin-bottom: 1rem; line-height: 1.7; }
+
+/* Rebrand: keep the longer "Real Estate Solutions" wordmark tidy on small screens */
+@media (max-width: 600px){
+  .topbar .brand-mark{ font-size: 1.08rem; line-height: 1.12; }
+  .topbar .brand-sub{ font-size: 0.5rem; letter-spacing: 0.1em; margin-top: 0.1rem; }
+  .topbar .wrap{ padding: 0.55rem 1.1rem; gap: 0.7rem; }
+}

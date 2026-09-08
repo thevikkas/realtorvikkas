@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Realtor Vikkas — a self-contained real-estate web app.
+"""Real Estate Solutions — a self-contained real-estate web app.
 
 Standard library only. Run:  python3 app.py   then open http://localhost:8000
 
@@ -49,7 +49,7 @@ SYNC_KEY = os.environ.get("SYNC_KEY") or "vikkas-jaipur-8753"
 # Canonical base URL for SEO (canonical links, Open Graph, sitemap). Apex
 # redirects to www, so www is the canonical host.
 SITE_BASE = (os.environ.get("SITE_BASE") or "https://www.realtorvikkas.com").rstrip("/")
-DEFAULT_DESC = ("Realtor Vikkas — buy, sell and rent flats, plots and villas in Jaipur. "
+DEFAULT_DESC = ("Real Estate Solutions — buy, sell and rent flats, plots and villas in Jaipur. "
                 "Verified property listings across Vaishali Nagar, Mansarovar, Jagatpura, "
                 "C-Scheme, Ajmer Road and more, with owner contacts and site visits.")
 
@@ -89,7 +89,7 @@ INVEST_CATEGORIES = ["Plot", "Pre-launch", "Resort / Second Home",
 INVEST_DISCLAIMER = (
     "Property investment carries market risk. Any figures, timelines or attributes shown are "
     "indicative and provided by the seller or owner — they are not guaranteed returns and are "
-    "subject to independent due diligence. Realtor Vikkas is a real-estate consultancy, not a "
+    "subject to independent due diligence. Real Estate Solutions is a real-estate consultancy, not a "
     "financial adviser. Please verify all details before committing.")
 
 # Market insights / guides module.
@@ -271,7 +271,7 @@ def layout(title, body, req, active="", description=None, canonical=None,
     floats = "" if (user and user["role"] == "owner") else _float_actions(req)
 
     # --- SEO head ---
-    full_title = f"{title} — Realtor Vikkas"
+    full_title = f"{title} — Real Estate Solutions"
     desc = e(description or DEFAULT_DESC)
     canon = e(canonical or (SITE_BASE + (req.path or "/")))
     _private = req.path.startswith(("/owner", "/account", "/admin")) or \
@@ -289,7 +289,7 @@ def layout(title, body, req, active="", description=None, canonical=None,
 <meta name="robots" content="{robots}">
 <link rel="canonical" href="{canon}">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Realtor Vikkas">
+<meta property="og:site_name" content="Real Estate Solutions">
 <meta property="og:title" content="{e(full_title)}">
 <meta property="og:description" content="{desc}">
 <meta property="og:url" content="{canon}">{og_img}
@@ -301,7 +301,7 @@ def layout(title, body, req, active="", description=None, canonical=None,
 <header class="topbar">
   <div class="wrap">
     <a href="/" class="brand">
-      <span class="brand-mark">Realtor Vikkas</span>
+      <span class="brand-mark">Real Estate Solutions</span>
       <span class="brand-sub">Property Register · Est. Jaipur</span>
     </a>
     <nav class="topnav">{nav}</nav>
@@ -311,7 +311,7 @@ def layout(title, body, req, active="", description=None, canonical=None,
 {flash}
 {body}
 </main>
-<footer class="app-foot">Realtor Vikkas — Land &amp; homes across Rajasthan, Delhi, Gujarat &amp; the Himalayas.</footer>
+<footer class="app-foot">Real Estate Solutions — Land &amp; homes across Rajasthan, Delhi, Gujarat &amp; the Himalayas.</footer>
 {floats}
 {callback}
 </body>
@@ -320,7 +320,7 @@ def layout(title, body, req, active="", description=None, canonical=None,
 
 def _float_actions(req):
     """Floating WhatsApp + Call buttons for visitors (every public page)."""
-    wa = _wa_url("Hi, I found realtorvikkas.com and would like help with a property in Jaipur.")
+    wa = _wa_url("Hi, I found Real Estate Solutions online and would like help with a property in Jaipur.")
     return f"""
 <div class="fab-stack">
   <a class="fab wa" href="{wa}" target="_blank" rel="noopener" aria-label="Chat on WhatsApp">
@@ -347,7 +347,7 @@ def _callback_widget(req):
 <dialog id="cbDlg" class="callback-dlg">
   <form method="post" action="/callback">
     <h3 style="margin:0 0 4px">Request a callback</h3>
-    <p style="margin:0 0 14px;color:var(--muted);font-size:.9rem">Leave your number — Realtor Vikkas will call you back.</p>
+    <p style="margin:0 0 14px;color:var(--muted);font-size:.9rem">Leave your number — Real Estate Solutions will call you back.</p>
     <input type="hidden" name="back" value="{e(req.path)}">
     <input type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute!important;left:-9999px!important;top:-9999px!important;height:1px;width:1px;opacity:0">
     <label>Name</label><input name="name" required>
@@ -536,7 +536,7 @@ def list_properties(req):
     seo_title = "Properties in Jaipur — Flats, Plots & Villas for Sale & Rent"
     seo_desc = ("Browse verified property listings in Jaipur — flats, plots and villas for "
                 "sale and rent in Vaishali Nagar, Mansarovar, Jagatpura, C-Scheme, Ajmer Road "
-                "and more. Owner contacts and easy site visits with Realtor Vikkas.")
+                "and more. Owner contacts and easy site visits with Real Estate Solutions.")
     return Response(layout(seo_title, body, req, description=seo_desc,
                            canonical=SITE_BASE + "/properties"))
 
@@ -678,7 +678,7 @@ def property_detail(req, pid):
       <div><div class="k">Bedrooms</div><div class="v">{e(p["bedrooms"] or "—")}</div></div>
       <div><div class="k">Bathrooms</div><div class="v">{e(p["bathrooms"] or "—")}</div></div>
       <div><div class="k">Locality</div><div class="v">{e(p["locality"] or p["city"])}</div></div>
-      <div><div class="k">Listed by</div><div class="v">{e(owner["name"] if owner else "Realtor Vikkas")}</div></div>
+      <div><div class="k">Listed by</div><div class="v">Real Estate Solutions</div></div>
     </div>
     <div class="detail-actions">
       <a class="da-btn wa" href="{wa_detail}" target="_blank" rel="noopener">💬 WhatsApp</a>
@@ -691,7 +691,7 @@ def property_detail(req, pid):
   <aside>
     <div class="card">
       <h3 style="font-size:1.2rem;margin-bottom:0.3rem">Enquire about this property</h3>
-      <p class="lead" style="font-size:0.85rem;margin-bottom:1rem">Send Realtor Vikkas a message and the team will be in touch.</p>
+      <p class="lead" style="font-size:0.85rem;margin-bottom:1rem">Send Real Estate Solutions a message and the team will be in touch.</p>
       <form method="post" action="/enquiry">
         <input type="hidden" name="property_id" value="{p["id"]}">
         <input type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute!important;left:-9999px!important;top:-9999px!important;height:1px;width:1px;opacity:0">
@@ -762,7 +762,7 @@ def property_detail(req, pid):
 def submit_enquiry(req):
     pid = req.f("property_id")
     if _is_spam(req.f("name"), req.f("message"), req.f("website")):
-        return redirect(f"/property/{pid}", msg="Thank you — your enquiry has been sent to Realtor Vikkas.")
+        return redirect(f"/property/{pid}", msg="Thank you — your enquiry has been sent to Real Estate Solutions.")
     conn = get_conn()
     p = conn.execute("SELECT id FROM properties WHERE id = ?", (pid,)).fetchone()
     if not p:
@@ -777,7 +777,7 @@ def submit_enquiry(req):
     conn.commit()
     conn.close()
     _save_lead(req.f("name"), req.f("phone"), prop["title"] if prop else "", req.f("message"))
-    return redirect(f"/property/{pid}", msg="Thank you — your enquiry has been sent to Realtor Vikkas.")
+    return redirect(f"/property/{pid}", msg="Thank you — your enquiry has been sent to Real Estate Solutions.")
 
 
 # ---------------------------------------------------------------------------
@@ -806,7 +806,7 @@ def auth_aside(role):
     return f"""
   <aside class="auth-aside">
     <div>
-      <div class="auth-logo">Realtor Vikkas</div>
+      <div class="auth-logo">Real Estate Solutions</div>
       <div class="auth-logo-sub">Property Register · Est. Jaipur</div>
     </div>
     <div>
@@ -926,7 +926,7 @@ def login_form_email(req, role):
       </div>
       <button class="btn btn-brass" type="submit">Log in</button>
     </form>
-    <p class="auth-alt">New to Realtor Vikkas? <a class="muted-link" href="/register">Create an account</a></p>
+    <p class="auth-alt">New to Real Estate Solutions? <a class="muted-link" href="/register">Create an account</a></p>
     {phone_switch}
   </div>
 </div>
@@ -1045,13 +1045,13 @@ def terms_page(req):
 <div class="card" style="max-width:760px;margin:1.5rem auto">
   <p class="eyebrow">Legal</p>
   <h1 style="font-size:1.7rem">Terms &amp; Conditions</h1>
-  <p class="lead" style="margin-top:0.6rem">A plain-language summary of how Realtor Vikkas works.</p>
+  <p class="lead" style="margin-top:0.6rem">A plain-language summary of how Real Estate Solutions works.</p>
   <div style="margin-top:1.4rem;display:flex;flex-direction:column;gap:1rem;color:var(--muted);font-size:0.92rem;line-height:1.65">
     <p><b style="color:var(--ink)">1. Accounts.</b> You are responsible for keeping your login details private. Provide accurate contact information so owners can reach you about enquiries.</p>
     <p><b style="color:var(--ink)">2. Listings.</b> Property details are provided by owners and are indicative only. Verify all details, pricing and documents independently before any transaction.</p>
     <p><b style="color:var(--ink)">3. Enquiries.</b> Submitting an enquiry shares your name and contact details with the property owner so they can respond.</p>
     <p><b style="color:var(--ink)">4. Acceptable use.</b> Do not post unlawful, misleading or infringing content, and do not misuse the platform or other users' data.</p>
-    <p><b style="color:var(--ink)">5. Liability.</b> Realtor Vikkas is a listing platform and is not a party to any deal between buyers, renters and owners.</p>
+    <p><b style="color:var(--ink)">5. Liability.</b> Real Estate Solutions is a listing platform and is not a party to any deal between buyers, renters and owners.</p>
     <p style="font-size:0.82rem">Questions? Email <a class="muted-link" href="mailto:owner@realtorvikkas.in">owner@realtorvikkas.in</a>.</p>
   </div>
   <p style="margin-top:1.4rem"><a class="btn btn-ghost" href="/login">← Back to login</a></p>
@@ -1377,7 +1377,7 @@ def submit_callback(req):
     if not name or not phone:
         return redirect(back, err="Please give your name and phone so we can call you back.")
     if _is_spam(name, note, req.f("website")):
-        return redirect(back, msg="Thank you — Realtor Vikkas will call you back shortly.")
+        return redirect(back, msg="Thank you — Real Estate Solutions will call you back shortly.")
     conn = get_conn()
     conn.execute(
         "INSERT INTO callbacks (name, phone, preferred, note, property_id, status, created_at) "
@@ -1386,7 +1386,7 @@ def submit_callback(req):
     conn.commit()
     conn.close()
     _save_lead(name, phone, "", note or (f"Callback — best time: {preferred}" if preferred else "Callback request"))
-    return redirect(back, msg="Thank you — Realtor Vikkas will call you back shortly.")
+    return redirect(back, msg="Thank you — Real Estate Solutions will call you back shortly.")
 
 
 def owner_callbacks(req):
@@ -1703,7 +1703,7 @@ def invest_page(req):
 
     cards = "".join(_invest_card(iv) for iv in rows) or (
         '<div class="empty">Current opportunities are shared privately. '
-        '<a href="#consult">Request a consultation</a> and Realtor Vikkas will send a shortlist '
+        '<a href="#consult">Request a consultation</a> and Real Estate Solutions will send a shortlist '
         'matched to your goals.</div>')
 
     wa = _wa_url("Hi, I'd like an investment consultation for property in Jaipur. Please guide me.")
@@ -1721,7 +1721,7 @@ def invest_page(req):
 <p class="eyebrow">Investment &amp; Resorts · Jaipur</p>
 <h1>Invest in Jaipur real estate — with guidance, not guesswork</h1>
 <p class="lead">Plots, pre-launch homes, rental-yield commercial and resort / second-home opportunities
-in and around Jaipur — shortlisted, checked and explained by Realtor Vikkas so you invest with a
+in and around Jaipur — shortlisted, checked and explained by Real Estate Solutions so you invest with a
 clear picture. No hype, no guaranteed-return promises.</p>
 <div class="detail-actions">
   <a class="da-btn wa" href="{wa}" target="_blank" rel="noopener">💬 Free consultation</a>
@@ -1739,17 +1739,17 @@ clear picture. No hype, no guaranteed-return promises.</p>
 
 <section class="detail-section" id="consult">
   <h2>Request an investment consultation</h2>
-  <p class="lead" style="margin-bottom:1rem">Tell Realtor Vikkas what you're looking for — you'll
+  <p class="lead" style="margin-bottom:1rem">Tell Real Estate Solutions what you're looking for — you'll
   get a call back and a shortlist. Your details are private.</p>
   {_consult_form()}
 </section>
 
 <p class="disclaimer">{INVEST_DISCLAIMER}</p>
 """
-    seo_title = "Property Investment & Resorts in Jaipur — Realtor Vikkas"
+    seo_title = "Property Investment & Resorts in Jaipur — Real Estate Solutions"
     seo_desc = ("Invest in Jaipur real estate — plots, pre-launch homes, rental-yield commercial and "
-                "resort / second-home opportunities, shortlisted and due-diligence-checked by Realtor "
-                "Vikkas. Request a free, no-obligation consultation.")
+                "resort / second-home opportunities, shortlisted and due-diligence-checked by "
+                "Real Estate Solutions. Request a free, no-obligation consultation.")
     return Response(layout(seo_title, body, req, description=seo_desc,
                            canonical=SITE_BASE + "/invest"))
 
@@ -1808,7 +1808,7 @@ def invest_detail(req, iid):
   <aside>
     <div class="card" id="consult">
       <h3 style="font-size:1.2rem;margin-bottom:0.3rem">Request a consultation</h3>
-      <p class="lead" style="font-size:0.85rem;margin-bottom:1rem">Realtor Vikkas will call you back about this opportunity.</p>
+      <p class="lead" style="font-size:0.85rem;margin-bottom:1rem">Real Estate Solutions will call you back about this opportunity.</p>
       {_consult_form(iv["title"])}
     </div>
     {qr_card}
@@ -1817,7 +1817,7 @@ def invest_detail(req, iid):
 <p class="disclaimer">{INVEST_DISCLAIMER}</p>
 {sim_html}
 """
-    seo_title = f'{iv["title"]} — Investment in {iv["location"] or "Jaipur"} | Realtor Vikkas'
+    seo_title = f'{iv["title"]} — Investment in {iv["location"] or "Jaipur"} | Real Estate Solutions'
     seo_desc = (f'{iv["category"]} investment opportunity in {iv["location"] or "Jaipur"}. '
                 + (iv["description"][:150].strip() if iv["description"] else "")).strip()
     return Response(layout(seo_title, body, req, description=seo_desc,
@@ -1828,7 +1828,7 @@ def invest_enquiry(req):
     name, phone = req.f("name"), req.f("phone")
     budget, goal = req.f("budget"), req.f("goal")
     horizon, msg, opp = req.f("horizon"), req.f("message"), req.f("opp")
-    thanks = "Thank you — Realtor Vikkas will reach out about your investment goals."
+    thanks = "Thank you — Real Estate Solutions will reach out about your investment goals."
     if _is_spam(name, msg, req.f("website")):
         return redirect("/invest", msg=thanks)          # silently drop spam
     parts = []
@@ -2149,7 +2149,7 @@ def insights_page(req):
     wa = _wa_url("Hi, I'd like guidance on the Jaipur property market. Please help.")
     cards = "".join(_insight_card(a) for a in rows) or (
         '<div class="empty">Fresh insights are on the way. Meanwhile, '
-        f'<a href="{wa}" target="_blank" rel="noopener">ask Realtor Vikkas directly</a>.</div>')
+        f'<a href="{wa}" target="_blank" rel="noopener">ask Real Estate Solutions directly</a>.</div>')
     body = f"""
 <p class="eyebrow">Insights · Jaipur</p>
 <h1>Market insights &amp; buyer guides</h1>
@@ -2159,7 +2159,7 @@ JDA approvals, and how to weigh a decision. Factual help, no hype.</p>
 <div class="ins-grid">{cards}</div>
 """
     return Response(layout("Market Insights", body, req,
-                           description="Jaipur real-estate insights and buyer guides from Realtor Vikkas — title checks, JDA approvals, buy vs rent.",
+                           description="Jaipur real-estate insights and buyer guides from Real Estate Solutions — title checks, JDA approvals, buy vs rent.",
                            canonical=SITE_BASE + "/insights"))
 
 
@@ -2175,7 +2175,7 @@ def insight_detail(req, iid):
     conn.close()
     src = f'<p class="lead" style="font-size:.82rem;margin-top:1.5rem">Source: {e(a["source"])}</p>' if a["source"] else ""
     tag = e(a["category"]) + (f' · {e(a["area"])}' if a["area"] else "")
-    wa = _wa_url(f'Hi, I read "{a["title"]}" on realtorvikkas.com and would like to discuss.')
+    wa = _wa_url(f'Hi, I read "{a["title"]}" on your website and would like to discuss.')
     more_html = ""
     if more:
         more_html = ('<section class="detail-section"><h2>More insights</h2><div class="ins-grid">'
@@ -2188,7 +2188,7 @@ def insight_detail(req, iid):
 <div class="article">{_insight_body_html(a["body"])}</div>
 {src}
 <div class="detail-actions" style="margin-top:1.6rem">
-  <a class="da-btn wa" href="{wa}" target="_blank" rel="noopener">💬 Ask Realtor Vikkas</a>
+  <a class="da-btn wa" href="{wa}" target="_blank" rel="noopener">💬 Ask Real Estate Solutions</a>
   <a class="da-btn call" href="tel:{PHONE}">📞 Call Now</a>
 </div>
 {more_html}
@@ -2650,7 +2650,7 @@ def main():
         # Never let a database hiccup stop the web server from starting — the
         # site must bind its port so the host routes to it instead of 404ing.
         print(f"[startup] init_db failed but continuing: {exc}")
-    print(f"\n  Realtor Vikkas is running →  http://localhost:{PORT}\n")
+    print(f"\n  Real Estate Solutions is running →  http://localhost:{PORT}\n")
     print("  Owner login  : thevikkas@gmail.com / Jerry@1998")
     print("  Client login : client@realtorvikkas.in / Client@1998\n")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
