@@ -1,0 +1,60 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Test application
+        run: |
+          python3 -c "import app; print('✓ App imports successfully')"
+          python3 -c "from database import init_db; print('✓ Database module OK')"
+
+      - name: Deploy to production
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          DEPLOY_PATH: /var/www/realtor-vikkas
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan $SERVER_IP >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Deploy code
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude='.git' \
+            --exclude='*.pyc' \
+            --exclude='__pycache__' \
+            --exclude='venv' \
+            ./ root@$SERVER_IP:$DEPLOY_PATH/
+
+          # Restart service
+          ssh -i ~/.ssh/deploy_key root@$SERVER_IP "systemctl restart realtor-vikkas"
+
+          # Verify
+          sleep 5
+          curl -f https://realtorvikkas.com/command-center || exit 1
+
+      - name: Notify deployment
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const status = context.job.status;
+            const message = `Deployment ${status}: Realtor Vikkas Platform`;
+            console.log(message);

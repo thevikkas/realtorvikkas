@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  realtor-vikkas:
+    build: .
+    ports:
+      - "10000:10000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENV=production
+    volumes:
+      - ./realtor_vikkas.db:/app/realtor_vikkas.db
+      - ./static:/app/static:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/command-center"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - realtor-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./static:/usr/share/nginx/html/static:ro
+    depends_on:
+      - realtor-vikkas
+    restart: unless-stopped
+    networks:
+      - realtor-network
+
+networks:
+  realtor-network:
+    driver: bridge
