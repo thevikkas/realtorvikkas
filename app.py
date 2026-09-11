@@ -21,6 +21,48 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import auth
 from database import get_conn, init_db, now
+from intelligence_engine import calculate_property_opportunity_score
+from investment_calc import (
+    calculate_investment, generate_scenarios, save_calculation_to_db,
+    get_calculation_from_db, get_user_calculations, create_comparison_set,
+    get_comparison_set, format_money, format_percentage, format_emi
+)
+from matching_engine import (
+    match_properties_to_requirement, get_matches_for_requirement,
+    find_requirements_for_property
+)
+from growth_map import (
+    get_city_statistics, get_locality_statistics, get_all_cities,
+    get_localities_for_city, get_infrastructure_projects,
+    get_top_opportunities, format_market_sentiment, get_heat_map_data
+)
+from deal_room import (
+    create_deal, get_deal, update_deal_status, list_deals, add_stakeholder, get_deal_stakeholders,
+    upload_document, get_deal_documents, add_timeline_event, get_deal_timeline, mark_event_completed,
+    add_communication, get_deal_communications, calculate_deal_metrics, get_deal_metrics, get_deal_summary,
+    get_deal_dashboard_stats, generate_deal_report
+)
+from investment_desk import (
+    create_portfolio, get_portfolio, list_portfolios, add_property_to_portfolio, get_portfolio_properties,
+    calculate_portfolio_performance, generate_portfolio_metrics, create_scenario, get_portfolio_scenarios,
+    compare_scenarios, analyze_diversification, analyze_risk, get_portfolio_summary, get_investment_desk_dashboard
+)
+from concierge import (
+    create_concierge_request, get_concierge_request, list_client_requests, assign_advisor, get_client_advisor,
+    set_client_preferences, get_client_preferences, generate_recommendations, get_client_recommendations,
+    log_communication, get_request_communications, update_request_status, record_activity,
+    get_client_activity_history, calculate_advisor_metrics, get_client_summary, get_concierge_dashboard_stats
+)
+from opportunity_score import (
+    calculate_opportunity_score, get_opportunity_score, get_best_opportunities, get_opportunities_by_priority,
+    identify_market_signals, rank_opportunities, get_opportunity_analysis, get_opportunity_dashboard_stats
+)
+from crm_intelligence import (
+    calculate_lead_score, get_hot_leads, track_interaction, get_lead_history, get_crm_dashboard_stats
+)
+from command_center import (
+    get_platform_dashboard, get_executive_summary
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "static")
@@ -760,6 +802,1893 @@ def property_detail(req, pid):
 
     return Response(layout(seo_title, body, req, description=seo_desc,
                            canonical=SITE_BASE + f"/property/{p['id']}", head_extra=jsonld))
+
+
+# WEEK 1: Property Intelligence Engine routes
+
+def property_intelligence(req, pid):
+    """Display property intelligence/opportunity score page."""
+    conn = get_conn()
+    p = conn.execute("SELECT * FROM properties WHERE id = ?", (pid,)).fetchone()
+    if not p or p["status"] == "hidden":
+        conn.close()
+        return not_found(req)
+
+    # Get intelligence scores
+    scores_data = calculate_property_opportunity_score(pid)
+    if not scores_data:
+        conn.close()
+        return not_found(req)
+
+    # Get location data
+    loc = conn.execute(
+        "SELECT * FROM location_data WHERE city = ? AND locality = ?",
+        (p["city"], p["locality"])
+    ).fetchone()
+
+    conn.close()
+
+    # Build component scores HTML
+    components = scores_data["component_scores"]
+    components_html = f"""
+    <div class="scores-grid">
+      <div class="score-card">
+        <div class="score-label">Location & Connectivity</div>
+        <div class="score-value">{components['location']}</div>
+        <div class="score-bar"><div class="score-fill" style="width:{components['location']}%"></div></div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">Appreciation Potential</div>
+        <div class="score-value">{components['appreciation']}</div>
+        <div class="score-bar"><div class="score-fill" style="width:{components['appreciation']}%"></div></div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">Rental Yield Potential</div>
+        <div class="score-value">{components['rental']}</div>
+        <div class="score-bar"><div class="score-fill" style="width:{components['rental']}%"></div></div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">Price Positioning</div>
+        <div class="score-value">{components['price']}</div>
+        <div class="score-bar"><div class="score-fill" style="width:{components['price']}%"></div></div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">Liquidity (Sell-ability)</div>
+        <div class="score-value">{components['liquidity']}</div>
+        <div class="score-bar"><div class="score-fill" style="width:{components['liquidity']}%"></div></div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">Risk Mitigation</div>
+        <div class="score-value">{components['risk']}</div>
+        <div class="score-bar"><div class="score-fill" style="width:{components['risk']}%"></div></div>
+      </div>
+    </div>
+    """
+
+    # Build investor profile matches
+    profiles = scores_data["investor_profiles"]
+    profiles_html = f"""
+    <div class="investor-profiles">
+      <h3>Investor Profile Matches</h3>
+      <div class="profile-grid">
+        <div class="profile-card">
+          <div class="profile-name">First-Time Buyer</div>
+          <div class="profile-score">{profiles['first-time buyer']}/100</div>
+          <div class="profile-match">{"✓ Good Fit" if profiles['first-time buyer'] >= 70 else "○ Moderate" if profiles['first-time buyer'] >= 50 else "✗ Limited"}</div>
+        </div>
+        <div class="profile-card">
+          <div class="profile-name">Investor</div>
+          <div class="profile-score">{profiles['investor']}/100</div>
+          <div class="profile-match">{"✓ Good Fit" if profiles['investor'] >= 70 else "○ Moderate" if profiles['investor'] >= 50 else "✗ Limited"}</div>
+        </div>
+        <div class="profile-card">
+          <div class="profile-name">NRI</div>
+          <div class="profile-score">{profiles['NRI']}/100</div>
+          <div class="profile-match">{"✓ Good Fit" if profiles['NRI'] >= 70 else "○ Moderate" if profiles['NRI'] >= 50 else "✗ Limited"}</div>
+        </div>
+        <div class="profile-card">
+          <div class="profile-name">HNI</div>
+          <div class="profile-score">{profiles['HNI']}/100</div>
+          <div class="profile-match">{"✓ Good Fit" if profiles['HNI'] >= 70 else "○ Moderate" if profiles['HNI'] >= 50 else "✗ Limited"}</div>
+        </div>
+      </div>
+    </div>
+    """
+
+    # Build location details
+    location_html = "<div class=\"location-details\"><h3>Location Intelligence</h3>"
+    if loc:
+        location_html += f"""
+        <div class="location-grid">
+          <div class="loc-item">
+            <strong>Nearest Metro</strong>
+            <span>{loc['nearest_metro_km']} km{" (Metro Planned)" if loc['metro_planned'] else ""}</span>
+          </div>
+          <div class="loc-item">
+            <strong>Nearest Mall</strong>
+            <span>{loc['nearest_mall_km']} km</span>
+          </div>
+          <div class="loc-item">
+            <strong>Nearest Hospital</strong>
+            <span>{loc['nearest_hospital_km']} km</span>
+          </div>
+          <div class="loc-item">
+            <strong>Nearest School</strong>
+            <span>{loc['nearest_school_km']} km</span>
+          </div>
+          <div class="loc-item">
+            <strong>Road Quality</strong>
+            <span>{loc['road_quality'].title()}</span>
+          </div>
+          <div class="loc-item">
+            <strong>Public Transport</strong>
+            <span>{loc['public_transport'].title()}</span>
+          </div>
+          <div class="loc-item">
+            <strong>Market Demand</strong>
+            <span>{loc['demand_level'].title()}</span>
+          </div>
+          <div class="loc-item">
+            <strong>Avg Rental Yield</strong>
+            <span>{loc['avg_rental_yield']:.2f}%</span>
+          </div>
+        </div>
+        """
+    location_html += "</div>"
+
+    overall_score = scores_data["overall_score"]
+    score_class = "excellent" if overall_score >= 80 else "good" if overall_score >= 60 else "moderate"
+
+    body = f"""
+    <p><a class="muted-link" href="/property/{p['id']}">← Back to property</a></p>
+    <div class="intelligence-detail">
+      <h1>{e(p['title'])} — Property Opportunity Score</h1>
+      <p class="lead">{e(p['locality'])}, {e(p['city'])}</p>
+
+      <div class="main-score {score_class}">
+        <div class="score-circle">
+          <div class="score-number">{overall_score}</div>
+          <div class="score-label">/100</div>
+        </div>
+        <div class="score-description">
+          <h2>{"Excellent" if overall_score >= 80 else "Good" if overall_score >= 60 else "Moderate"} Opportunity</h2>
+          <p>This property scores well across location, connectivity, market demand, and investment potential.</p>
+        </div>
+      </div>
+
+      <section class="score-components">
+        <h2>Component Scores</h2>
+        {components_html}
+      </section>
+
+      {profiles_html}
+
+      {location_html}
+
+      <div class="score-methodology">
+        <h3>How We Calculate</h3>
+        <p>Our Property Opportunity Score™ combines six factors:</p>
+        <ul>
+          <li><strong>Location & Connectivity (25%)</strong> — Metro access, amenities, infrastructure</li>
+          <li><strong>Appreciation Potential (20%)</strong> — Historical growth, planned infrastructure, demand trends</li>
+          <li><strong>Rental Yield Potential (20%)</strong> — Current rental rates, tenant demand, area competitiveness</li>
+          <li><strong>Price Positioning (15%)</strong> — Comparison to similar properties in the locality</li>
+          <li><strong>Liquidity (10%)</strong> — How easily the property can be sold in this market</li>
+          <li><strong>Risk Mitigation (10%)</strong> — Regulatory compliance, market stability, title clarity</li>
+        </ul>
+        <p class="disclaimer">This score is for educational purposes and helps you understand investment potential. Always conduct independent due diligence and consult with financial advisors before making investment decisions.</p>
+      </div>
+    </div>
+    """
+
+    seo_title = f"Property Score: {e(p['title'])} — {overall_score}/100"
+    seo_desc = f"Property Opportunity Score for {e(p['title'])} in {e(p['locality'])}, {e(p['city'])}. Score: {overall_score}/100 ({score_class.title()})."
+
+    return Response(layout(seo_title, body, req, description=seo_desc,
+                           canonical=SITE_BASE + f"/property/{p['id']}/intelligence"))
+
+
+def api_property_scores(req, pid):
+    """Return property scores as JSON for API integrations."""
+    scores_data = calculate_property_opportunity_score(pid)
+    if not scores_data:
+        return Response("404", status="404 Not Found")
+
+    return Response(json.dumps(scores_data), headers={"Content-Type": "application/json"})
+
+
+# WEEK 2: Real Estate Investment OS routes
+
+def calculator_page(req):
+    """Show investment calculator form."""
+    body = """
+<p><a class="muted-link" href="/">← Home</a></p>
+<div class="calculator-container">
+  <h1>Real Estate Investment Calculator</h1>
+  <p class="lead">Model your real estate investment returns with conservative, base, and optimistic scenarios.</p>
+
+  <div class="calculator-form">
+    <form method="post" action="/api/calculate">
+      <fieldset>
+        <legend>Property & Investment Details</legend>
+        <div class="form-group">
+          <label for="prop_name">Property Name</label>
+          <input type="text" id="prop_name" name="property_name" placeholder="e.g., 3BHK Flat in Jagatpura" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="inv_amt">Property Price (₹)</label>
+            <input type="number" id="inv_amt" name="investment_amount" placeholder="5000000" min="100000" step="100000" required>
+          </div>
+          <div class="form-group">
+            <label for="down">Down Payment (₹)</label>
+            <input type="number" id="down" name="down_payment" placeholder="2000000" min="0" step="100000" required>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Loan Details (if financing)</legend>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="rate">Loan Interest Rate (%)</label>
+            <input type="number" id="rate" name="loan_rate" placeholder="7.5" min="0" max="15" step="0.1" value="7.5">
+          </div>
+          <div class="form-group">
+            <label for="term">Loan Term (Years)</label>
+            <input type="number" id="term" name="loan_term_years" placeholder="20" min="1" max="30" step="1" value="20">
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Income Assumptions</legend>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="rent">Monthly Rental Income (₹)</label>
+            <input type="number" id="rent" name="rental_income_monthly" placeholder="20000" min="0" step="1000" value="0">
+          </div>
+          <div class="form-group">
+            <label for="rent_growth">Annual Rental Growth (%)</label>
+            <input type="number" id="rent_growth" name="rental_growth_annual" placeholder="3" min="0" max="20" step="0.5" value="3">
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Appreciation & Exit Assumptions</legend>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="app">Annual Price Appreciation (%)</label>
+            <input type="number" id="app" name="property_appreciation_annual" placeholder="4" min="0" max="20" step="0.5" value="4">
+          </div>
+          <div class="form-group">
+            <label for="hold">Holding Period (Years)</label>
+            <input type="number" id="hold" name="holding_period_years" placeholder="5" min="1" max="50" step="1" value="5">
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Annual Expenses</legend>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="maint">Annual Maintenance (₹)</label>
+            <input type="number" id="maint" name="annual_maintenance" placeholder="20000" min="0" step="5000" value="20000">
+          </div>
+          <div class="form-group">
+            <label for="tax">Annual Property Tax (₹)</label>
+            <input type="number" id="tax" name="annual_property_tax" placeholder="10000" min="0" step="5000" value="10000">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="ins">Annual Insurance (₹)</label>
+            <input type="number" id="ins" name="annual_insurance" placeholder="5000" min="0" step="1000" value="5000">
+          </div>
+          <div class="form-group">
+            <label for="vac">Vacancy Loss (% of rental)</label>
+            <input type="number" id="vac" name="annual_vacancy_loss" placeholder="5" min="0" max="100" step="1" value="5">
+          </div>
+        </div>
+      </fieldset>
+
+      <button type="submit" class="btn btn-brass" style="width:100%;margin-top:1.5rem;font-size:1.1rem;padding:1rem">
+        📊 Calculate Investment Returns
+      </button>
+    </form>
+  </div>
+
+  <div class="calculator-help">
+    <h2>How to Use</h2>
+    <ul>
+      <li><strong>Property Price:</strong> Total market value of the property</li>
+      <li><strong>Down Payment:</strong> Your out-of-pocket upfront investment</li>
+      <li><strong>Loan Details:</strong> Leave at 0% if paying all-cash (no loan)</li>
+      <li><strong>Rental Income:</strong> Expected monthly rent (0 if buying for own use)</li>
+      <li><strong>Appreciation:</strong> Expected annual price growth (4% is typical)</li>
+      <li><strong>Expenses:</strong> Annual costs like maintenance, taxes, insurance</li>
+      <li><strong>Vacancy:</strong> Expected percentage of time property won't generate income</li>
+    </ul>
+  </div>
+
+  <div class="calculator-disclaimer">
+    <p><strong>⚠️ Disclaimer:</strong> These calculations are for educational purposes. " +
+    "Actual returns depend on many factors including market conditions, property condition, " +
+    "tenant quality, and local regulations. Always verify assumptions and consult financial advisors.</p>
+  </div>
+</div>
+"""
+    return Response(layout("Investment Calculator", body, req, description="Calculate real estate investment returns, ROI, CAGR, and scenarios."))
+
+
+def api_calculate(req):
+    """API endpoint to calculate investment returns."""
+    if req.method != "POST":
+        return Response("405", status="405 Method Not Allowed")
+
+    # Get form data
+    try:
+        inputs = {
+            'property_name': req.f('property_name'),
+            'investment_amount': int(req.f('investment_amount')),
+            'down_payment': int(req.f('down_payment')),
+            'loan_amount': 0,  # Will be calculated
+            'loan_rate': float(req.f('loan_rate')) if req.f('loan_rate') else 7.5,
+            'loan_term_years': int(req.f('loan_term_years')) if req.f('loan_term_years') else 20,
+            'rental_income_monthly': int(req.f('rental_income_monthly')) if req.f('rental_income_monthly') else 0,
+            'rental_growth_annual': float(req.f('rental_growth_annual')) if req.f('rental_growth_annual') else 3,
+            'property_appreciation_annual': float(req.f('property_appreciation_annual')) if req.f('property_appreciation_annual') else 4,
+            'holding_period_years': int(req.f('holding_period_years')) if req.f('holding_period_years') else 5,
+            'annual_maintenance': int(req.f('annual_maintenance')) if req.f('annual_maintenance') else 20000,
+            'annual_property_tax': int(req.f('annual_property_tax')) if req.f('annual_property_tax') else 10000,
+            'annual_insurance': int(req.f('annual_insurance')) if req.f('annual_insurance') else 5000,
+            'annual_vacancy_loss': float(req.f('annual_vacancy_loss')) if req.f('annual_vacancy_loss') else 5,
+        }
+    except (ValueError, TypeError):
+        return redirect("/calculator", err="Invalid input values. Please check your numbers.")
+
+    # Validate inputs
+    if inputs['investment_amount'] < 100000:
+        return redirect("/calculator", err="Property price must be at least ₹1,00,000")
+    if inputs['down_payment'] < 0 or inputs['down_payment'] > inputs['investment_amount']:
+        return redirect("/calculator", err="Down payment must be between 0 and property price")
+
+    # Calculate scenarios
+    try:
+        scenarios = generate_scenarios(inputs)
+    except Exception as e:
+        return redirect("/calculator", err=f"Calculation error: {str(e)}")
+
+    # Save calculations if user is logged in
+    if req.user:
+        for scenario_type, calc_data in scenarios.items():
+            save_calculation_to_db(req.user['id'], calc_data, scenario_type)
+
+    # Return results page
+    body = """
+<p><a class="muted-link" href="/calculator">← Back to calculator</a></p>
+<div class="calc-results">
+  <h1>PROP_NAME_PLACEHOLDER</h1>
+  <p class="lead">PROP_NAME_PLACEHOLDER Investment Analysis</p>
+
+  <div class="scenario-selector">
+    <button class="scenario-tab active" data-scenario="conservative">
+      🛡️ Conservative<br><small>Lower growth</small>
+    </button>
+    <button class="scenario-tab" data-scenario="base">
+      📊 Base Case<br><small>Expected growth</small>
+    </button>
+    <button class="scenario-tab" data-scenario="optimistic">
+      🚀 Optimistic<br><small>Strong growth</small>
+    </button>
+  </div>
+
+  <div id="scenario-content"></div>
+
+  <div class="calc-comparison">
+    <h2>Scenario Comparison</h2>
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Conservative</th>
+          <th>Base</th>
+          <th>Optimistic</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Total Rental Income</td>
+          <td>CONS_RENTAL</td>
+          <td>BASE_RENTAL</td>
+          <td>OPT_RENTAL</td>
+        </tr>
+        <tr>
+          <td>Total EMI Paid</td>
+          <td>CONS_EMI</td>
+          <td>BASE_EMI</td>
+          <td>OPT_EMI</td>
+        </tr>
+        <tr>
+          <td>Total Expenses</td>
+          <td>CONS_EXP</td>
+          <td>BASE_EXP</td>
+          <td>OPT_EXP</td>
+        </tr>
+        <tr>
+          <td>Estimated Resale Value</td>
+          <td>CONS_RESALE</td>
+          <td>BASE_RESALE</td>
+          <td>OPT_RESALE</td>
+        </tr>
+        <tr class="highlight">
+          <td><strong>Net Profit</strong></td>
+          <td><strong>CONS_PROFIT</strong></td>
+          <td><strong>BASE_PROFIT</strong></td>
+          <td><strong>OPT_PROFIT</strong></td>
+        </tr>
+        <tr class="highlight">
+          <td><strong>ROI</strong></td>
+          <td><strong>CONS_ROI</strong></td>
+          <td><strong>BASE_ROI</strong></td>
+          <td><strong>OPT_ROI</strong></td>
+        </tr>
+        <tr class="highlight">
+          <td><strong>CAGR</strong></td>
+          <td><strong>CONS_CAGR</strong></td>
+          <td><strong>BASE_CAGR</strong></td>
+          <td><strong>OPT_CAGR</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="calc-details">
+    <h2>Investment Summary</h2>
+    <div class="detail-cards">
+      <div class="detail-card">
+        <div class="detail-label">Property Price</div>
+        <div class="detail-value">PRICE_PLACEHOLDER</div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-label">Down Payment</div>
+        <div class="detail-value">DOWN_PLACEHOLDER</div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-label">Loan Amount</div>
+        <div class="detail-value">LOAN_PLACEHOLDER</div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-label">Monthly EMI</div>
+        <div class="detail-value">EMI_PLACEHOLDER</div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-label">Holding Period</div>
+        <div class="detail-value">YEARS_PLACEHOLDER</div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-label">Monthly Rental</div>
+        <div class="detail-value">RENTAL_PLACEHOLDER</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="calc-disclaimer">
+    <p><strong>⚠️ Disclaimer:</strong> These calculations are educational estimates based on the inputs you provided. Actual returns depend on market conditions, property condition, tenant quality, and regulations. Always verify calculations and consult a financial advisor before making investment decisions.</p>
+  </div>
+</div>
+
+<script>
+var scenarioData = SCENARIO_DATA_PLACEHOLDER;
+
+document.querySelectorAll('.scenario-tab').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.scenario-tab').forEach(function(b) {
+      b.classList.remove('active');
+    });
+    this.classList.add('active');
+    updateScenario(this.dataset.scenario);
+  });
+});
+
+function formatMoney(amt) {
+  if (!amt) return '—';
+  return '₹' + Math.round(amt).toLocaleString('en-IN');
+}
+
+function formatPct(val) {
+  if (!val) return '—';
+  return val.toFixed(2) + '%';
+}
+
+function updateScenario(scenario) {
+  var data = scenarioData[scenario];
+  var icons = {'conservative': '🛡️', 'base': '📊', 'optimistic': '🚀'};
+  var html = '<div class="scenario-detail">' +
+    '<h2>' + icons[scenario] + ' ' + scenario.toUpperCase() + ' SCENARIO</h2>' +
+    '<div class="metrics-grid">' +
+    '<div class="metric"><div class="metric-label">Total Rental Income</div>' +
+    '<div class="metric-value">' + formatMoney(data.total_rental_income) + '</div></div>' +
+    '<div class="metric"><div class="metric-label">Total Expenses</div>' +
+    '<div class="metric-value">' + formatMoney(data.total_expenses) + '</div></div>' +
+    '<div class="metric"><div class="metric-label">Resale Value</div>' +
+    '<div class="metric-value">' + formatMoney(data.estimated_resale_value) + '</div></div>' +
+    '<div class="metric highlight"><div class="metric-label">Net Profit</div>' +
+    '<div class="metric-value">' + formatMoney(data.net_profit) + '</div></div>' +
+    '<div class="metric highlight"><div class="metric-label">Total ROI</div>' +
+    '<div class="metric-value">' + formatPct(data.roi_percentage) + '</div></div>' +
+    '<div class="metric highlight"><div class="metric-label">CAGR</div>' +
+    '<div class="metric-value">' + formatPct(data.cagr) + '</div></div>' +
+    '</div></div>';
+  document.getElementById('scenario-content').innerHTML = html;
+}
+
+updateScenario('base');
+</script>
+"""
+
+    # Replace placeholders with actual values
+    body = body.replace('PROP_NAME_PLACEHOLDER', e(inputs['property_name']))
+    body = body.replace('PRICE_PLACEHOLDER', format_money(inputs['investment_amount']))
+    body = body.replace('DOWN_PLACEHOLDER', format_money(inputs['down_payment']))
+    body = body.replace('LOAN_PLACEHOLDER', format_money(inputs['investment_amount'] - inputs['down_payment']))
+    body = body.replace('EMI_PLACEHOLDER', format_emi(scenarios['base']['emi']))
+    body = body.replace('YEARS_PLACEHOLDER', f"{inputs['holding_period_years']} years")
+    body = body.replace('RENTAL_PLACEHOLDER', format_money(inputs['rental_income_monthly']))
+
+    # Replace scenario data
+    body = body.replace('SCENARIO_DATA_PLACEHOLDER', json.dumps({
+        'conservative': scenarios['conservative'],
+        'base': scenarios['base'],
+        'optimistic': scenarios['optimistic']
+    }, default=str))
+
+    # Replace table values
+    body = body.replace('CONS_RENTAL', format_money(scenarios['conservative']['total_rental_income']))
+    body = body.replace('BASE_RENTAL', format_money(scenarios['base']['total_rental_income']))
+    body = body.replace('OPT_RENTAL', format_money(scenarios['optimistic']['total_rental_income']))
+    body = body.replace('CONS_EMI', format_money(scenarios['conservative']['total_emi_paid']))
+    body = body.replace('BASE_EMI', format_money(scenarios['base']['total_emi_paid']))
+    body = body.replace('OPT_EMI', format_money(scenarios['optimistic']['total_emi_paid']))
+    body = body.replace('CONS_EXP', format_money(scenarios['conservative']['total_expenses']))
+    body = body.replace('BASE_EXP', format_money(scenarios['base']['total_expenses']))
+    body = body.replace('OPT_EXP', format_money(scenarios['optimistic']['total_expenses']))
+    body = body.replace('CONS_RESALE', format_money(scenarios['conservative']['estimated_resale_value']))
+    body = body.replace('BASE_RESALE', format_money(scenarios['base']['estimated_resale_value']))
+    body = body.replace('OPT_RESALE', format_money(scenarios['optimistic']['estimated_resale_value']))
+    body = body.replace('CONS_PROFIT', format_money(scenarios['conservative']['net_profit']))
+    body = body.replace('BASE_PROFIT', format_money(scenarios['base']['net_profit']))
+    body = body.replace('OPT_PROFIT', format_money(scenarios['optimistic']['net_profit']))
+    body = body.replace('CONS_ROI', format_percentage(scenarios['conservative']['roi_percentage']))
+    body = body.replace('BASE_ROI', format_percentage(scenarios['base']['roi_percentage']))
+    body = body.replace('OPT_ROI', format_percentage(scenarios['optimistic']['roi_percentage']))
+    body = body.replace('CONS_CAGR', format_percentage(scenarios['conservative']['cagr']))
+    body = body.replace('BASE_CAGR', format_percentage(scenarios['base']['cagr']))
+    body = body.replace('OPT_CAGR', format_percentage(scenarios['optimistic']['cagr']))
+
+    return Response(layout("Investment Results", body, req, description="Your real estate investment analysis with scenarios."))
+
+
+def api_investment_calculate(req):
+    """API endpoint that returns JSON results."""
+    if req.method != "POST":
+        return Response("405", status="405 Method Not Allowed")
+
+    try:
+        inputs = {
+            'property_name': req.f('property_name'),
+            'investment_amount': int(req.f('investment_amount')),
+            'down_payment': int(req.f('down_payment')),
+            'loan_amount': 0,
+            'loan_rate': float(req.f('loan_rate')) if req.f('loan_rate') else 7.5,
+            'loan_term_years': int(req.f('loan_term_years')) if req.f('loan_term_years') else 20,
+            'rental_income_monthly': int(req.f('rental_income_monthly')) if req.f('rental_income_monthly') else 0,
+            'rental_growth_annual': float(req.f('rental_growth_annual')) if req.f('rental_growth_annual') else 3,
+            'property_appreciation_annual': float(req.f('property_appreciation_annual')) if req.f('property_appreciation_annual') else 4,
+            'holding_period_years': int(req.f('holding_period_years')) if req.f('holding_period_years') else 5,
+            'annual_maintenance': int(req.f('annual_maintenance')) if req.f('annual_maintenance') else 20000,
+            'annual_property_tax': int(req.f('annual_property_tax')) if req.f('annual_property_tax') else 10000,
+            'annual_insurance': int(req.f('annual_insurance')) if req.f('annual_insurance') else 5000,
+            'annual_vacancy_loss': float(req.f('annual_vacancy_loss')) if req.f('annual_vacancy_loss') else 5,
+        }
+    except (ValueError, TypeError) as e:
+        return Response(json.dumps({'error': 'Invalid input'}), status="400 Bad Request",
+                      headers={"Content-Type": "application/json"})
+
+    scenarios = generate_scenarios(inputs)
+    return Response(json.dumps({k: dict(v) for k, v in scenarios.items()}, default=str),
+                   headers={"Content-Type": "application/json"})
+
+
+# WEEK 3: AI Property Matchmaker routes
+
+def requirements_form(req):
+    """Show buyer requirement collection form."""
+    body = """
+<p><a class="muted-link" href="/">← Home</a></p>
+<div class="matchmaker-container">
+  <h1>Find Your Perfect Property</h1>
+  <p class="lead">Answer a few questions about what you're looking for, and we'll match you with ideal properties.</p>
+
+  <form method="post" action="/api/match-properties" class="match-form">
+    <fieldset>
+      <legend>Step 1: Budget</legend>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="budget_min">Minimum Budget (₹)</label>
+          <input type="number" id="budget_min" name="budget_min" placeholder="2000000" min="100000" step="100000" required>
+        </div>
+        <div class="form-group">
+          <label for="budget_max">Maximum Budget (₹)</label>
+          <input type="number" id="budget_max" name="budget_max" placeholder="5000000" min="100000" step="100000" required>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Step 2: Location & Type</legend>
+      <div class="form-group">
+        <label for="locations">Preferred Cities/Localities (comma-separated)</label>
+        <input type="text" id="locations" name="location_preferences" placeholder="Jagatpura, Vaishali, C-Scheme" required>
+      </div>
+      <div class="form-group">
+        <label for="types">Property Types (comma-separated)</label>
+        <input type="text" id="types" name="property_types" placeholder="Flat, Villa, Plot" required>
+      </div>
+      <div class="form-group">
+        <label for="listing">Listing Type</label>
+        <select id="listing" name="listing_type" required>
+          <option value="buy">Buy</option>
+          <option value="rent">Rent</option>
+          <option value="either">Either</option>
+        </select>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Step 3: Property Features</legend>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="beds">Minimum Bedrooms</label>
+          <input type="number" id="beds" name="min_bedrooms" placeholder="0" min="0" step="1" value="0">
+        </div>
+        <div class="form-group">
+          <label for="baths">Minimum Bathrooms</label>
+          <input type="number" id="baths" name="min_bathrooms" placeholder="0" min="0" step="1" value="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="amenities">Desired Amenities (comma-separated)</label>
+        <input type="text" id="amenities" name="amenities_wanted" placeholder="Gym, Pool, Security, Parking">
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Step 4: Purpose & Preferences</legend>
+      <div class="form-group">
+        <label for="purpose">Are you buying for personal use or investment?</label>
+        <select id="purpose" name="investment_purpose">
+          <option value="">Personal Use</option>
+          <option value="investment">Investment</option>
+          <option value="both">Both</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="profile">How would you describe yourself?</label>
+        <select id="profile" name="investor_profile">
+          <option value="">Any</option>
+          <option value="first-time buyer">First-time Buyer</option>
+          <option value="investor">Investor</option>
+          <option value="nri">NRI</option>
+          <option value="hni">HNI</option>
+        </select>
+      </div>
+      <div class="form-check">
+        <input type="checkbox" id="walkable" name="walkability_important" value="1">
+        <label for="walkable">Walkability is important to me</label>
+      </div>
+      <div class="form-check">
+        <input type="checkbox" id="transit" name="public_transit_important" value="1">
+        <label for="transit">Public transit access is important</label>
+      </div>
+    </fieldset>
+
+    <button type="submit" class="btn btn-brass" style="width:100%;margin-top:1.5rem;font-size:1.1rem;padding:1rem">
+      🔍 Find Matching Properties
+    </button>
+  </form>
+</div>
+"""
+    return Response(layout("Find Properties", body, req, description="Match with ideal properties based on your requirements."))
+
+
+def api_match_properties(req):
+    """Calculate matches for buyer requirements."""
+    if req.method != "POST":
+        return Response("405", status="405 Method Not Allowed")
+
+    try:
+        # Get form data
+        conn = get_conn()
+
+        req_id = conn.execute(
+            "INSERT INTO buyer_requirements "
+            "(user_id, budget_min, budget_max, location_preferences, property_types, "
+            "listing_type, min_bedrooms, min_bathrooms, amenities_wanted, "
+            "investment_purpose, investor_profile, walkability_important, "
+            "public_transit_important, created_at, last_updated) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                req.user['id'] if req.user else None,
+                int(req.f('budget_min')),
+                int(req.f('budget_max')),
+                req.f('location_preferences'),
+                req.f('property_types'),
+                req.f('listing_type') or 'buy',
+                int(req.f('min_bedrooms')) if req.f('min_bedrooms') else 0,
+                int(req.f('min_bathrooms')) if req.f('min_bathrooms') else 0,
+                req.f('amenities_wanted') or '',
+                req.f('investment_purpose') or '',
+                req.f('investor_profile') or '',
+                1 if req.f('walkability_important') else 0,
+                1 if req.f('public_transit_important') else 0,
+                now(),
+                now(),
+            )
+        ).lastrowid
+
+        conn.commit()
+        conn.close()
+
+        # Calculate matches
+        matches = match_properties_to_requirement(req_id)
+
+        if not matches:
+            return redirect("/match", msg="No properties matched your criteria. Try adjusting your requirements.")
+
+        # Show results
+        body = f"""
+<p><a class="muted-link" href="/match">← Back to requirements</a></p>
+<div class="match-results">
+  <h1>Your Matching Properties</h1>
+  <p class="lead">Found {len(matches)} properties matching your criteria, ranked by match score.</p>
+
+  <div class="matches-grid">
+"""
+
+        for match in matches:
+            match_pct = match['match_score']
+            match_class = "excellent" if match_pct >= 80 else "good" if match_pct >= 60 else "moderate"
+
+            reasons_html = "<ul>" + "".join(f"<li>✓ {r}</li>" for r in match['reasons'][:3]) + "</ul>"
+            concerns_html = ""
+            if match['concerns']:
+                concerns_html = "<div class='concerns'><strong>⚠️ Note:</strong><ul>" + "".join(f"<li>{c}</li>" for c in match['concerns'][:2]) + "</ul></div>"
+
+            body += f"""
+    <div class="match-card {match_class}">
+      <div class="match-rank">#{match['rank']}</div>
+      <div class="match-score">{match_pct}%</div>
+      <h3>{match['property_title']}</h3>
+      <div class="match-meta">
+        <span class="tag">{match['property_type']}</span>
+        <span class="location">{match['location']}</span>
+        <span class="price">{format_money(match['price'])}</span>
+      </div>
+      <div class="match-reasons">{reasons_html}</div>
+      {concerns_html}
+      <a href="/property/{match['property_id']}" class="btn btn-ghost btn-sm">View Property →</a>
+    </div>
+"""
+
+        body += """
+  </div>
+</div>
+"""
+
+        return Response(layout("Your Matches", body, req, description=f"Found {len(matches)} properties matching your criteria."))
+
+    except Exception as e:
+        return redirect("/match", err=f"Error processing requirements: {str(e)}")
+
+
+def property_reverse_match(req, pid):
+    """Show which buyer profiles want this property."""
+    conn = get_conn()
+    prop = conn.execute("SELECT * FROM properties WHERE id = ?", (pid,)).fetchone()
+
+    if not prop:
+        conn.close()
+        return not_found(req)
+
+    conn.close()
+
+    # Find matching buyer profiles
+    matches = find_requirements_for_property(pid, limit=10)
+
+    body = f"""
+<p><a class="muted-link" href="/property/{pid}">← Back to property</a></p>
+<div class="reverse-match">
+  <h1>Buyer Interest in {e(prop['title'])}</h1>
+  <p class="lead">This property matches {len(matches)} buyer profiles.</p>
+
+  <div class="buyer-profiles">
+"""
+
+    if matches:
+        for match in matches:
+            score = match['match_score']
+            match_class = "excellent" if score >= 80 else "good" if score >= 60 else "moderate"
+
+            body += f"""
+    <div class="profile-card {match_class}">
+      <div class="profile-score">{score}%</div>
+      <div class="profile-budget">{match['budget_range']}</div>
+      <div class="profile-type">{match['buyer_profile'] or 'General Buyer'}</div>
+      <ul class="profile-reasons">
+        {"".join(f'<li>{r}</li>' for r in match['reasons'][:2])}
+      </ul>
+    </div>
+"""
+    else:
+        body += "<p>No matching buyer profiles yet. Share this property to attract interested buyers!</p>"
+
+    body += """
+  </div>
+</div>
+"""
+
+    return Response(layout("Buyer Interest", body, req, description=f"Buyer profiles interested in {prop['title']}."))
+
+
+# WEEK 4: Real Estate Growth Map routes
+
+def growth_map_page(req):
+    """Show growth map overview with all cities."""
+    cities = get_all_cities()
+    opportunities = get_top_opportunities(5)
+
+    cities_html = '<div class="cities-grid">'
+    for city in cities:
+        sentiment, color = format_market_sentiment(city['growth_5yr'])
+        cities_html += f"""
+    <div class="city-card">
+      <h3>{e(city['city'])}</h3>
+      <div class="city-stats">
+        <div class="stat">
+          <div class="stat-label">5-Year Growth</div>
+          <div class="stat-value">{city['growth_5yr']:.1f}%</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Properties</div>
+          <div class="stat-value">{city['total_properties']}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Sentiment</div>
+          <div class="stat-value">{sentiment}</div>
+        </div>
+      </div>
+      <a href="/growth-map/{city['city'].replace(' ', '-')}" class="btn btn-ghost btn-sm">View Details →</a>
+    </div>
+"""
+    cities_html += '</div>'
+
+    opportunities_html = '<div class="opportunities-grid">'
+    for opp in opportunities:
+        opportunities_html += f"""
+    <div class="opportunity-card">
+      <div class="opp-score">{opp['opportunity_score']}/100</div>
+      <h4>{e(opp['city'])}</h4>
+      <p>Growth: {opp['growth_5yr']:.1f}% | Properties: {opp['properties']}</p>
+    </div>
+"""
+    opportunities_html += '</div>'
+
+    body = f"""
+<p><a class="muted-link" href="/">← Home</a></p>
+<div class="growth-map-container">
+  <h1>Real Estate Growth Map</h1>
+  <p class="lead">Discover investment opportunities across growing markets.</p>
+
+  <section class="growth-section">
+    <h2>🎯 Top Opportunities</h2>
+    {opportunities_html}
+  </section>
+
+  <section class="growth-section">
+    <h2>📍 All Markets</h2>
+    {cities_html}
+  </section>
+
+  <section class="growth-info">
+    <h2>How We Calculate Growth</h2>
+    <ul>
+      <li><strong>5-Year Growth:</strong> Historical price appreciation over 5 years</li>
+      <li><strong>Market Sentiment:</strong> Bullish (4%+), Neutral (2-4%), Bearish (<2%)</li>
+      <li><strong>Demand Level:</strong> Based on actual property listings and market activity</li>
+      <li><strong>Infrastructure:</strong> Planned projects and connectivity improvements</li>
+    </ul>
+  </section>
+</div>
+"""
+    return Response(layout("Growth Map", body, req, description="Explore real estate growth opportunities across markets."))
+
+
+def city_growth_detail(req, city_slug):
+    """Show detailed growth analysis for a city."""
+    city_name = city_slug.replace('-', ' ').title()
+
+    stats = get_city_statistics(city_name)
+    if not stats:
+        return redirect("/growth-map", err=f"City {city_slug} not found")
+
+    localities = get_localities_for_city(city_name)
+    projects = get_infrastructure_projects(city_name)
+
+    localities_html = '<div class="localities-grid">'
+    for loc in localities:
+        localities_html += f"""
+    <div class="locality-card">
+      <h4>{e(loc['locality'])}</h4>
+      <div class="loc-stats">
+        <span>Growth: {loc['growth_5yr']:.1f}%</span>
+        <span>Properties: {loc['properties']}</span>
+        <span>₹{loc['price_per_sqft']:,}/sqft</span>
+      </div>
+      <a href="/growth-map/{city_slug}/{loc['locality'].replace(' ', '-')}" class="btn btn-ghost btn-xs">Explore →</a>
+    </div>
+"""
+    localities_html += '</div>'
+
+    projects_html = '<div class="projects-list">'
+    for proj in projects:
+        status_badge = f'<span class="badge {proj["status"]}">{proj["status"].title()}</span>'
+        projects_html += f"""
+    <div class="project-item">
+      <div class="project-info">
+        <h5>{e(proj['project_name'])}</h5>
+        <p>{proj['impact_description']}</p>
+      </div>
+      {status_badge}
+    </div>
+"""
+    projects_html += '</div>' if projects else '<p>No major infrastructure projects currently tracked.</p>'
+
+    sentiment, color = format_market_sentiment(stats['price_appreciation_5yr'])
+
+    body = f"""
+<p><a class="muted-link" href="/growth-map">← Back to map</a></p>
+<div class="city-detail">
+  <h1>{e(city_name)}</h1>
+  <p class="lead">Market intelligence and growth opportunities</p>
+
+  <div class="city-overview">
+    <div class="metric-card">
+      <div class="metric-label">5-Year Growth</div>
+      <div class="metric-value">{stats['price_appreciation_5yr']:.1f}%</div>
+      <div class="metric-sentiment">{sentiment}</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Avg Price</div>
+      <div class="metric-value">{format_money(stats['avg_price'])}</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Properties</div>
+      <div class="metric-value">{stats['total_properties']}</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Market Sentiment</div>
+      <div class="metric-value">{stats['market_sentiment'].title()}</div>
+    </div>
+  </div>
+
+  <section class="detail-section">
+    <h2>📍 Localities</h2>
+    {localities_html}
+  </section>
+
+  <section class="detail-section">
+    <h2>🏗️ Infrastructure Projects</h2>
+    {projects_html}
+  </section>
+</div>
+"""
+    return Response(layout(f"Growth Map: {city_name}", body, req, description=f"Growth analysis and opportunities in {city_name}."))
+
+
+def locality_growth_detail(req, city_slug, locality_slug):
+    """Show detailed growth analysis for a locality."""
+    city_name = city_slug.replace('-', ' ').title()
+    locality_name = locality_slug.replace('-', ' ').title()
+
+    stats = get_locality_statistics(city_name, locality_name)
+    if not stats:
+        return redirect(f"/growth-map/{city_slug}", err=f"Locality {locality_slug} not found")
+
+    projects = get_infrastructure_projects(city_name, locality_name)
+    conn = get_conn()
+    properties = conn.execute(
+        "SELECT * FROM properties WHERE city = ? AND locality = ? AND status = 'available'",
+        (city_name, locality_name)
+    ).fetchall()
+    conn.close()
+
+    properties_html = '<div class="property-list-mini">'
+    for prop in properties[:5]:
+        properties_html += f"""
+    <div class="prop-mini">
+      <a href="/property/{prop['id']}">{e(prop['title'])}</a>
+      <span class="price">{format_money(prop['price'])}</span>
+    </div>
+"""
+    if len(properties) > 5:
+        properties_html += f'<p class="muted"><a href="/properties?locality={locality_name}">View all {len(properties)} properties →</a></p>'
+    properties_html += '</div>'
+
+    connectivity_html = f"""
+    <ul>
+      <li>Metro: {stats['connectivity']['nearest_metro_km']} km</li>
+      <li>School: {stats['connectivity']['nearest_school_km']} km</li>
+      <li>Hospital: {stats['connectivity']['nearest_hospital_km']} km</li>
+      <li>Road Quality: {stats['connectivity']['road_quality'].title()}</li>
+      <li>Transit: {stats['connectivity']['public_transport'].title()}</li>
+    </ul>
+"""
+
+    sentiment, color = format_market_sentiment(stats['growth']['5yr'])
+
+    body = f"""
+<p><a class="muted-link" href="/growth-map/{city_slug}">← Back to {city_name}</a></p>
+<div class="locality-detail">
+  <h1>{e(locality_name)}, {e(city_name)}</h1>
+
+  <div class="locality-stats">
+    <div class="stat-item">
+      <strong>5-Year Growth:</strong> {stats['growth']['5yr']:.1f}% {sentiment}
+    </div>
+    <div class="stat-item">
+      <strong>Demand Level:</strong> {stats['market']['demand_level'].title()}
+    </div>
+    <div class="stat-item">
+      <strong>Price/SqFt:</strong> ₹{stats['market']['avg_price_per_sqft']:,}
+    </div>
+    <div class="stat-item">
+      <strong>Rental Yield:</strong> {stats['market']['avg_rental_yield']:.1f}%
+    </div>
+  </div>
+
+  <section class="detail-section">
+    <h2>📍 Connectivity</h2>
+    {connectivity_html}
+  </section>
+
+  <section class="detail-section">
+    <h2>🏠 Available Properties ({len(properties)})</h2>
+    {properties_html}
+  </section>
+
+  <section class="detail-section">
+    <h2>🏗️ Infrastructure</h2>
+    <p>{stats['infrastructure']['development'] or 'Standard urban infrastructure'}</p>
+  </section>
+</div>
+"""
+    return Response(layout(f"{locality_name}, {city_name}", body, req, description=f"Growth analysis for {locality_name} in {city_name}."))
+
+
+# WEEK 5: DEAL ROOM HANDLERS
+
+def deals_list(req):
+    """Show list of all deals with filters."""
+    deals = list_deals()
+    stats = get_deal_dashboard_stats()
+
+    deals_html = '<div class="deals-grid">'
+    for deal in deals:
+        status_color = {'prospecting': '#3b82f6', 'offer': '#f59e0b', 'negotiation': '#ef4444', 'closing': '#8b5cf6', 'closed': '#10b981', 'cancelled': '#6b7280'}
+        status_clr = status_color.get(deal['status'], '#6b7280')
+
+        deals_html += f"""
+    <div class="deal-card">
+      <div class="deal-header">
+        <h3><a href="/deal/{deal['id']}">{e(deal['title'])}</a></h3>
+        <span class="badge" style="background-color: {status_clr}40; color: {status_clr}">{deal['status'].title()}</span>
+      </div>
+      <div class="deal-info">
+        <div>💰 <strong>Offer: </strong>₹{deal['offer_price']:,}</div>
+        <div>🎯 <strong>Type: </strong>{deal['deal_type'].title()}</div>
+        <div>📅 <strong>Date: </strong>{deal['offer_date'][:10] if deal['offer_date'] else 'N/A'}</div>
+      </div>
+      <div class="deal-progress">
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: {deal['deal_stage_completion']}%"></div>
+        </div>
+        <small>{deal['deal_stage_completion']}% Complete</small>
+      </div>
+    </div>
+"""
+    deals_html += '</div>'
+
+    stats_html = f"""
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-value">{stats['total_deals']}</div>
+        <div class="stat-label">Total Deals</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">{stats['active_deals']}</div>
+        <div class="stat-label">Active</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">{stats['closed_deals']}</div>
+        <div class="stat-label">Closed</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">₹{stats['total_value_closed']:,}</div>
+        <div class="stat-label">Total Value</div>
+      </div>
+    </div>
+"""
+
+    body = f"""
+<div class="deal-room-container">
+  <div class="page-header">
+    <h1>💼 Deal Room</h1>
+    <a href="/deals/create" class="btn btn-primary">Create New Deal</a>
+  </div>
+
+  <section class="growth-section">
+    <h2>📊 Dashboard</h2>
+    {stats_html}
+  </section>
+
+  <section class="growth-section">
+    <h2>📋 All Deals</h2>
+    {deals_html if deals else '<p class="muted">No deals yet. <a href="/deals/create">Create one →</a></p>'}
+  </section>
+</div>
+"""
+    return Response(layout("Deal Room", body, req, description="Manage high-value real estate deals"))
+
+
+def deal_detail(req, deal_id):
+    """Show detailed deal information."""
+    deal = get_deal_summary(deal_id)
+    if not deal:
+        return redirect("/deals", err="Deal not found")
+
+    metrics = get_deal_metrics(deal_id)
+
+    stakeholders_html = '<ul>'
+    for s in deal.get('stakeholders', []):
+        stakeholders_html += f'<li><strong>{s["role"].title()}: </strong>{e(s["name"])} ({s.get("email", "N/A")})</li>'
+    stakeholders_html += '</ul>'
+
+    timeline_html = '<div class="timeline">'
+    for event in deal.get('timeline', [])[:5]:
+        completed_class = 'completed' if event['completed'] else ''
+        timeline_html += f"""
+    <div class="timeline-item {completed_class}">
+      <div class="timeline-marker"></div>
+      <div class="timeline-content">
+        <h4>{e(event['title'])}</h4>
+        <p>{event.get('scheduled_date', 'No date') if event.get('scheduled_date') else 'Pending'}</p>
+      </div>
+    </div>
+"""
+    timeline_html += '</div>'
+
+    metrics_html = ''
+    if metrics:
+        metrics_html = f"""
+    <div class="metrics-grid">
+      <div class="metric">
+        <div class="metric-label">Purchase Price</div>
+        <div class="metric-value">₹{metrics['purchase_price']:,}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Expected ROI</div>
+        <div class="metric-value">{metrics.get('expected_roi_annual', 0):.1f}%</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Rental Yield</div>
+        <div class="metric-value">{metrics.get('rental_yield', 0):.1f}%</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Cap Rate</div>
+        <div class="metric-value">{metrics.get('cap_rate', 0):.1f}%</div>
+      </div>
+    </div>
+"""
+
+    body = f"""
+<div class="deal-detail">
+  <div class="page-header">
+    <h1>{e(deal['title'])}</h1>
+    <span class="badge">{deal['status'].title()}</span>
+  </div>
+
+  <div class="deal-main">
+    <section class="detail-section">
+      <h2>📋 Deal Information</h2>
+      <table class="detail-table">
+        <tr><td><strong>Type:</strong></td><td>{deal['deal_type'].title()}</td></tr>
+        <tr><td><strong>Status:</strong></td><td>{deal['status'].title()}</td></tr>
+        <tr><td><strong>Offer Price:</strong></td><td>₹{deal['offer_price']:,}</td></tr>
+        <tr><td><strong>Agreed Price:</strong></td><td>₹{deal['agreed_price']:,}</td></tr>
+        <tr><td><strong>Completion:</strong></td><td>{deal['deal_stage_completion']}%</td></tr>
+      </table>
+    </section>
+
+    <section class="detail-section">
+      <h2>👥 Team & Stakeholders</h2>
+      {stakeholders_html}
+      <p><a href="/deal/{deal_id}/stakeholders" class="btn btn-sm">Manage Team →</a></p>
+    </section>
+
+    <section class="detail-section">
+      <h2>📁 Documents</h2>
+      <p>{len(deal.get('documents', []))} document(s)</p>
+      <p><a href="/deal/{deal_id}/documents" class="btn btn-sm">Manage Documents →</a></p>
+    </section>
+
+    <section class="detail-section">
+      <h2>📅 Timeline</h2>
+      {timeline_html}
+      <p><a href="/deal/{deal_id}/timeline" class="btn btn-sm">View Full Timeline →</a></p>
+    </section>
+
+    {metrics_html}
+  </div>
+</div>
+"""
+    return Response(layout(deal['title'], body, req, description=f"Deal details: {deal['title']}"))
+
+
+# WEEK 6: MEGA INVESTMENT DESK HANDLERS
+
+def investment_desk_dashboard(req):
+    """Show investment desk dashboard with all portfolios."""
+    portfolios = list_portfolios()
+    stats = get_investment_desk_dashboard()
+
+    portfolios_html = '<div class="portfolios-grid">'
+    for portfolio in portfolios:
+        status_class = 'healthy' if portfolio['annual_return'] > 8 else 'moderate' if portfolio['annual_return'] > 0 else 'poor'
+
+        portfolios_html += f"""
+    <div class="portfolio-card {status_class}">
+      <div class="portfolio-header">
+        <h3><a href="/portfolio/{portfolio['id']}">{e(portfolio['name'])}</a></h3>
+        <span class="badge">{portfolio['portfolio_type'].title()}</span>
+      </div>
+      <div class="portfolio-info">
+        <div class="metric-row">
+          <span>Value:</span> <strong>₹{portfolio['current_value']:,}</strong>
+        </div>
+        <div class="metric-row">
+          <span>Properties:</span> <strong>{portfolio['num_properties']}</strong>
+        </div>
+        <div class="metric-row">
+          <span>Annual Return:</span> <strong>{portfolio['annual_return']:.1f}%</strong>
+        </div>
+        <div class="metric-row">
+          <span>Risk Score:</span> <strong>{portfolio.get('risk_score', 'N/A')}</strong>
+        </div>
+      </div>
+    </div>
+"""
+    portfolios_html += '</div>'
+
+    stats_html = f"""
+    <div class="desk-stats">
+      <div class="stat-card">
+        <div class="stat-number">{stats['total_portfolios']}</div>
+        <div class="stat-label">Portfolios</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{stats['total_properties']}</div>
+        <div class="stat-label">Properties</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">₹{stats['total_value']:,}</div>
+        <div class="stat-label">Total Value</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">₹{stats['total_rental_income']:,}</div>
+        <div class="stat-label">Annual Income</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{stats['average_annual_return']:.1f}%</div>
+        <div class="stat-label">Avg Return</div>
+      </div>
+    </div>
+"""
+
+    body = f"""
+<div class="investment-desk-container">
+  <div class="page-header">
+    <h1>💼 Mega Investment Desk</h1>
+    <a href="/portfolio/create" class="btn btn-primary">Create Portfolio</a>
+  </div>
+
+  <section class="growth-section">
+    <h2>📊 Dashboard Overview</h2>
+    {stats_html}
+  </section>
+
+  <section class="growth-section">
+    <h2>💰 Investment Portfolios</h2>
+    {portfolios_html if portfolios else '<p class="muted">No portfolios yet. <a href="/portfolio/create">Create one →</a></p>'}
+  </section>
+</div>
+"""
+    return Response(layout("Mega Investment Desk", body, req, description="Manage multiple investment portfolios"))
+
+
+def portfolio_detail(req, portfolio_id):
+    """Show detailed portfolio view with analytics."""
+    portfolio = get_portfolio_summary(portfolio_id)
+    if not portfolio:
+        return redirect("/portfolios", err="Portfolio not found")
+
+    # Calculate fresh performance
+    perf = calculate_portfolio_performance(portfolio_id)
+    metrics = generate_portfolio_metrics(portfolio_id)
+    diversification = analyze_diversification(portfolio_id)
+    risk = analyze_risk(portfolio_id)
+
+    properties_html = '<div class="properties-list">'
+    for prop in portfolio.get('properties', [])[:10]:
+        properties_html += f"""
+    <div class="property-row">
+      <div class="prop-name">
+        <strong>{e(prop.get('title', 'Property'))}</strong>
+        <small>{prop.get('city', 'N/A')}</small>
+      </div>
+      <div class="prop-metrics">
+        <span class="metric">Value: ₹{prop.get('current_value', 0):,}</span>
+        <span class="metric">Allocation: {prop.get('weight_in_portfolio', 0):.1f}%</span>
+      </div>
+    </div>
+"""
+    properties_html += '</div>'
+
+    perf_html = f"""
+    <div class="performance-grid">
+      <div class="perf-card">
+        <div class="perf-label">Total Value</div>
+        <div class="perf-value">₹{perf['current_value']:,}</div>
+      </div>
+      <div class="perf-card">
+        <div class="perf-label">Total Return</div>
+        <div class="perf-value">{perf['total_return_pct']:.1f}%</div>
+      </div>
+      <div class="perf-card">
+        <div class="perf-label">Annual Return</div>
+        <div class="perf-value">{perf['annualized_return']:.1f}%</div>
+      </div>
+      <div class="perf-card">
+        <div class="perf-label">Cash on Cash</div>
+        <div class="perf-value">{perf['cash_on_cash_return']:.1f}%</div>
+      </div>
+      <div class="perf-card">
+        <div class="perf-label">Rental Income</div>
+        <div class="perf-value">₹{perf['total_rental_income']:,}</div>
+      </div>
+      <div class="perf-card">
+        <div class="perf-label">Net Cash Flow</div>
+        <div class="perf-value">₹{perf['net_cash_flow']:,}</div>
+      </div>
+    </div>
+"""
+
+    body = f"""
+<div class="portfolio-detail">
+  <div class="page-header">
+    <h1>{e(portfolio['name'])}</h1>
+    <span class="badge">{portfolio['portfolio_type'].title()}</span>
+  </div>
+
+  <section class="detail-section">
+    <h2>📊 Performance</h2>
+    {perf_html}
+  </section>
+
+  <section class="detail-section">
+    <h2>🏠 Properties ({len(portfolio.get('properties', []))})</h2>
+    {properties_html}
+  </section>
+
+  <section class="detail-section">
+    <h2>🎯 Diversification</h2>
+    <p><strong>Score:</strong> {diversification['diversification_score']:.0f}/100</p>
+    <p><strong>Property Types:</strong> {len(diversification['type_distribution'])}</p>
+    <p><strong>Locations:</strong> {len(diversification['city_distribution'])}</p>
+  </section>
+
+  <section class="detail-section">
+    <h2>⚠️ Risk Analysis</h2>
+    <p><strong>Risk Score:</strong> {risk['risk_score']:.0f}/100</p>
+    <p><strong>Concentration Risk:</strong> {risk['concentration_risk']:.1f}%</p>
+    <p><strong>Stress Test (10% downturn):</strong> ₹{risk['stress_test_10pct_loss']:,} loss</p>
+  </section>
+</div>
+"""
+    return Response(layout(portfolio['name'], body, req, description=f"Portfolio details: {portfolio['name']}"))
+
+
+# WEEK 7: CONCIERGE FOUNDATION HANDLERS
+
+def concierge_dashboard(req):
+    """Show concierge foundation dashboard."""
+    stats = get_concierge_dashboard_stats()
+
+    requests_by_type_html = '<ul>'
+    for req_type in stats['requests_by_type']:
+        requests_by_type_html += f'<li><strong>{req_type["request_type"].title()}:</strong> {req_type["count"]} requests</li>'
+    requests_by_type_html += '</ul>'
+
+    advisors_html = '<div class="advisors-list">'
+    for advisor in stats['top_advisors'][:5]:
+        advisors_html += f'<div class="advisor-item"><strong>Advisor ID {advisor["advisor_id"]}:</strong> {advisor["request_count"]} requests</div>'
+    advisors_html += '</div>'
+
+    stats_html = f"""
+    <div class="concierge-stats">
+      <div class="stat-card">
+        <div class="stat-number">{stats['total_clients']}</div>
+        <div class="stat-label">Clients Served</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{stats['active_requests']}</div>
+        <div class="stat-label">Active Requests</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{stats['completed_requests']}</div>
+        <div class="stat-label">Completed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{stats['average_satisfaction']:.1f}</div>
+        <div class="stat-label">Satisfaction (0-5)</div>
+      </div>
+    </div>
+"""
+
+    body = f"""
+<div class="concierge-container">
+  <div class="page-header">
+    <h1>👔 Concierge Foundation</h1>
+    <a href="/concierge/request" class="btn btn-primary">New Request</a>
+  </div>
+
+  <section class="growth-section">
+    <h2>📊 Dashboard Overview</h2>
+    {stats_html}
+  </section>
+
+  <section class="growth-section">
+    <h2>📋 Requests by Type</h2>
+    {requests_by_type_html}
+  </section>
+
+  <section class="growth-section">
+    <h2>⭐ Top Advisors</h2>
+    {advisors_html if stats['top_advisors'] else '<p class="muted">No advisors assigned yet</p>'}
+  </section>
+</div>
+"""
+    return Response(layout("Concierge Foundation", body, req, description="Premium concierge services management"))
+
+
+def my_concierge(req):
+    """Show client's concierge details and requests."""
+    if not req.user:
+        return redirect("/login?next=/my-concierge", err="Please log in to access concierge services")
+
+    client_id = req.user['id']
+    summary = get_client_summary(client_id)
+    advisor = get_client_advisor(client_id)
+    requests_list = list_client_requests(client_id)
+    recommendations = get_client_recommendations(client_id)
+
+    requests_html = '<div class="requests-list">'
+    for creq in requests_list[:5]:
+        status_icon = {'pending': '⏳', 'assigned': '👤', 'in_progress': '⚙️', 'completed': '✅', 'cancelled': '❌'}
+        icon = status_icon.get(creq['status'], '?')
+        requests_html += f"""
+    <div class="request-item">
+      <div class="request-header">
+        <strong>{e(creq['title'])}</strong>
+        <span class="status-badge">{icon} {creq['status'].title()}</span>
+      </div>
+      <small class="muted">{creq['created_at'][:10]} • {creq['request_type'].title()}</small>
+    </div>
+"""
+    requests_html += '</div>'
+
+    advisor_html = ''
+    if advisor:
+        advisor_html = f"""
+    <div class="advisor-card">
+      <h3>{e(advisor.get('advisor_name', 'Your Advisor'))}</h3>
+      <p><strong>Email:</strong> {e(advisor.get('advisor_email', 'N/A'))}</p>
+      <p><strong>Phone:</strong> {e(advisor.get('advisor_phone', 'N/A'))}</p>
+      <p><strong>Communication:</strong> {advisor.get('preferred_communication', 'email').title()}</p>
+    </div>
+"""
+    else:
+        advisor_html = '<p class="muted">No advisor assigned yet. <a href="/concierge/request">Request one →</a></p>'
+
+    recs_html = '<div class="recs-list">'
+    for rec in recommendations[:5]:
+        recs_html += f"""
+    <div class="rec-item">
+      <div class="rec-score">{rec['confidence_score']}/100</div>
+      <div class="rec-content">
+        <strong>{e(rec['title'])}</strong>
+        <small>{rec['recommendation_type'].title()}</small>
+      </div>
+    </div>
+"""
+    recs_html += '</div>'
+
+    body = f"""
+<div class="concierge-client">
+  <div class="page-header">
+    <h1>👔 Your Concierge Services</h1>
+  </div>
+
+  <section class="detail-section">
+    <h2>👤 Your Personal Advisor</h2>
+    {advisor_html}
+  </section>
+
+  <section class="detail-section">
+    <h2>📋 Service Requests</h2>
+    {requests_html if requests_list else '<p class="muted">No requests yet</p>'}
+    <p><a href="/concierge/request" class="btn btn-sm">Create New Request →</a></p>
+  </section>
+
+  <section class="detail-section">
+    <h2>💡 Recommendations</h2>
+    {recs_html if recommendations else '<p class="muted">No recommendations yet</p>'}
+  </section>
+</div>
+"""
+    return Response(layout("My Concierge Services", body, req, description="Your personalized concierge services"))
+
+
+# WEEK 8: OPPORTUNITY SCORE™ HANDLERS
+
+def opportunities_dashboard(req):
+    """Show Opportunity Score™ dashboard with best opportunities."""
+    stats = get_opportunity_dashboard_stats()
+
+    opportunities_html = '<div class="opportunities-grid">'
+    for opp in stats['best_opportunities']:
+        # Get property info
+        conn = get_conn()
+        prop = conn.execute("SELECT title, city, price FROM properties WHERE id = ?", (opp['property_id'],)).fetchone()
+        conn.close()
+
+        if prop:
+            prop_dict = dict(prop)
+            score = opp['opportunity_score']
+            score_color = '#10b981' if score >= 80 else '#f59e0b' if score >= 70 else '#ef4444'
+
+            opportunities_html += f"""
+    <div class="opp-card">
+      <div class="opp-score" style="color: {score_color}">{score}/100</div>
+      <h3><a href="/property/{opp['property_id']}">{e(prop_dict['title'])}</a></h3>
+      <p class="location">{prop_dict.get('city', 'N/A')}</p>
+      <p class="price">₹{prop_dict.get('price', 0):,}</p>
+    </div>
+"""
+
+    opportunities_html += '</div>'
+
+    stats_html = f"""
+    <div class="opp-stats">
+      <div class="stat-card">
+        <div class="stat-number">{stats['total_opportunities']}</div>
+        <div class="stat-label">Total Opportunities</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{stats['strong_buy_count']}</div>
+        <div class="stat-label">Strong Buy</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{stats['consider_count']}</div>
+        <div class="stat-label">Consider</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{stats['monitor_count']}</div>
+        <div class="stat-label">Monitor</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{stats['average_score']:.0f}</div>
+        <div class="stat-label">Avg Score</div>
+      </div>
+    </div>
+"""
+
+    body = f"""
+<div class="opportunities-container">
+  <div class="page-header">
+    <h1>💎 Opportunity Score™</h1>
+    <span class="tagline">AI-Powered Opportunity Discovery</span>
+  </div>
+
+  <section class="growth-section">
+    <h2>📊 Market Overview</h2>
+    {stats_html}
+  </section>
+
+  <section class="growth-section">
+    <h2>⭐ Top Opportunities</h2>
+    {opportunities_html if stats['best_opportunities'] else '<p class="muted">No opportunities yet. Properties need scoring.</p>'}
+  </section>
+</div>
+"""
+    return Response(layout("Opportunity Score™", body, req, description="Discover best real estate opportunities"))
+
+
+def opportunity_detail(req, property_id):
+    """Show detailed opportunity analysis."""
+    analysis = get_opportunity_analysis(property_id)
+    if not analysis or not analysis.get('opportunity_score'):
+        return redirect("/properties", err="Opportunity analysis not found")
+
+    prop = analysis.get('property')
+    if not prop:
+        return redirect("/properties", err="Property not found")
+
+    score = analysis.get('opportunity_score', {})
+
+    # Score rating
+    score_num = score.get('opportunity_score', 0)
+    if score_num >= 80:
+        rating = '🟢 Excellent'
+        rating_color = '#10b981'
+    elif score_num >= 70:
+        rating = '🟡 Good'
+        rating_color = '#f59e0b'
+    elif score_num >= 50:
+        rating = '🔵 Moderate'
+        rating_color = '#3b82f6'
+    else:
+        rating = '🔴 Weak'
+        rating_color = '#ef4444'
+
+    components_html = f"""
+    <div class="score-breakdown">
+      <div class="component">
+        <span class="label">Location Score</span>
+        <div class="bar"><div class="fill" style="width: {score.get('location_score', 0)}%"></div></div>
+        <span class="value">{score.get('location_score', 0)}/100</span>
+      </div>
+      <div class="component">
+        <span class="label">Market Score</span>
+        <div class="bar"><div class="fill" style="width: {score.get('market_score', 0)}%"></div></div>
+        <span class="value">{score.get('market_score', 0)}/100</span>
+      </div>
+      <div class="component">
+        <span class="label">Financial Score</span>
+        <div class="bar"><div class="fill" style="width: {score.get('financial_score', 0)}%"></div></div>
+        <span class="value">{score.get('financial_score', 0)}/100</span>
+      </div>
+      <div class="component">
+        <span class="label">Demand Score</span>
+        <div class="bar"><div class="fill" style="width: {score.get('demand_score', 0)}%"></div></div>
+        <span class="value">{score.get('demand_score', 0)}/100</span>
+      </div>
+      <div class="component">
+        <span class="label">Timing Score</span>
+        <div class="bar"><div class="fill" style="width: {score.get('timing_score', 0)}%"></div></div>
+        <span class="value">{score.get('timing_score', 0)}/100</span>
+      </div>
+    </div>
+"""
+
+    signals_html = '<div class="signals-list">'
+    for signal in analysis.get('signals', [])[:5]:
+        s = dict(signal)
+        signal_icon = '📈' if s['signal_direction'] == 'bullish' else '📉' if s['signal_direction'] == 'bearish' else '➡️'
+        signals_html += f'<div class="signal-item">{signal_icon} {s["signal_description"]}</div>'
+    signals_html += '</div>'
+
+    body = f"""
+<div class="opportunity-detail">
+  <p><a class="muted-link" href="/opportunities">← Back to Opportunities</a></p>
+
+  <h1>{e(prop['title'])}</h1>
+  <p class="location">{prop.get('city', 'N/A')} • {prop.get('locality', '')}</p>
+
+  <div class="opportunity-header">
+    <div class="main-score">
+      <div class="score-number">{score_num}</div>
+      <div class="score-label">Opportunity Score™</div>
+      <div class="score-rating" style="color: {rating_color}">{rating}</div>
+    </div>
+
+    <div class="opportunity-meta">
+      <div class="meta-item">
+        <strong>Type:</strong> {score.get('opportunity_type', 'N/A').title()}
+      </div>
+      <div class="meta-item">
+        <strong>Risk Level:</strong> {score.get('risk_level', 'N/A').title()}
+      </div>
+      <div class="meta-item">
+        <strong>ROI Potential:</strong> {score.get('roi_potential', 0):.1f}% annual
+      </div>
+      <div class="meta-item">
+        <strong>Action:</strong> {score.get('action_priority', 'N/A').upper()}
+      </div>
+    </div>
+  </div>
+
+  <section class="detail-section">
+    <h2>📈 Score Components</h2>
+    {components_html}
+  </section>
+
+  <section class="detail-section">
+    <h2>🚨 Market Signals</h2>
+    {signals_html if analysis.get('signals') else '<p class="muted">No signals identified yet</p>'}
+  </section>
+
+  <section class="detail-section">
+    <h2>💼 Property Details</h2>
+    <div class="property-grid">
+      <div><strong>Price:</strong> ₹{prop.get('price', 0):,}</div>
+      <div><strong>Type:</strong> {prop.get('ptype', 'N/A')}</div>
+      <div><strong>Beds:</strong> {prop.get('bedrooms', 'N/A')}</div>
+      <div><strong>Baths:</strong> {prop.get('bathrooms', 'N/A')}</div>
+      <div><strong>Area:</strong> {prop.get('area_sqft', 'N/A')} sqft</div>
+      <div><strong>Status:</strong> {prop.get('status', 'N/A').title()}</div>
+    </div>
+  </section>
+</div>
+"""
+    return Response(layout(f"{prop['title']} - Opportunity Score™", body, req, description=f"Opportunity analysis for {prop['title']}"))
+
+
+# WEEK 9: CRM INTELLIGENCE HANDLERS
+
+def crm_dashboard(req):
+    """Show CRM dashboard with lead overview."""
+    stats = get_crm_dashboard_stats()
+    hot_leads = get_hot_leads(limit=10)
+
+    leads_html = '<div class="leads-list">'
+    for lead in hot_leads[:5]:
+        leads_html += f"""
+    <div class="lead-item hot">
+      <div class="lead-name">{e(lead['lead_name'])}</div>
+      <div class="lead-score">{lead['lead_score']}/100</div>
+      <small>{lead['lead_status'].title()}</small>
+    </div>
+"""
+    leads_html += '</div>'
+
+    stats_html = f"""
+    <div class="crm-stats">
+      <div class="stat-box"><div>{stats['total_leads']}</div><div>Total Leads</div></div>
+      <div class="stat-box"><div>{stats['hot_leads']}</div><div>Hot Leads</div></div>
+      <div class="stat-box"><div>{stats['warm_leads']}</div><div>Warm Leads</div></div>
+      <div class="stat-box"><div>{stats['closed_deals']}</div><div>Closed</div></div>
+    </div>
+"""
+
+    body = f"""
+<div class="crm-container">
+  <h1>📱 CRM Intelligence</h1>
+  <section class="growth-section">
+    <h2>📊 Dashboard</h2>
+    {stats_html}
+  </section>
+  <section class="growth-section">
+    <h2>🔥 Hot Leads (Ready to Close)</h2>
+    {leads_html if hot_leads else '<p class="muted">No hot leads yet</p>'}
+  </section>
+</div>
+"""
+    return Response(layout("CRM Intelligence", body, req, description="Customer relationship management"))
+
+
+def command_center(req):
+    """Executive Command Center — Platform overview & analytics."""
+    data = get_platform_dashboard()
+    summary = get_executive_summary()
+
+    kpi_html = f"""
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-value">{data['properties']['total']}</div>
+        <div class="kpi-label">Properties Listed</div>
+        <small>{data['properties']['high_opportunity']} with high opportunity</small>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value">₹{data['portfolios']['value']:,}</div>
+        <div class="kpi-label">Portfolio Value</div>
+        <small>{data['portfolios']['total']} portfolios</small>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value">{data['deals']['closed']}</div>
+        <div class="kpi-label">Closed Deals</div>
+        <small>₹{data['deals']['closed_value']:,}</small>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value">{data['crm']['hot']}</div>
+        <div class="kpi-label">Hot Leads</div>
+        <small>of {data['crm']['total_leads']} total</small>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value">{data['markets']['coverage']}</div>
+        <div class="kpi-label">Markets Covered</div>
+        <small>Geographic reach</small>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value">{data['deals']['active']}</div>
+        <div class="kpi-label">Active Deals</div>
+        <small>In pipeline</small>
+      </div>
+    </div>
+"""
+
+    metrics_html = f"""
+    <div class="metrics-table">
+      <div class="metric-row">
+        <span>Opportunity Conversion Rate</span>
+        <strong>{summary['key_metrics']['opp_conversion_rate']:.1f}%</strong>
+      </div>
+      <div class="metric-row">
+        <span>Lead Hot Ratio</span>
+        <strong>{summary['key_metrics']['lead_hot_ratio']:.1f}%</strong>
+      </div>
+      <div class="metric-row">
+        <span>Deal Success Rate</span>
+        <strong>{summary['key_metrics']['deal_success_rate']:.1f}%</strong>
+      </div>
+    </div>
+"""
+
+    body = f"""
+<div class="command-center">
+  <div class="page-header">
+    <h1>🎛️ Command Center</h1>
+    <span class="status-badge">✅ 9 Systems Active</span>
+  </div>
+
+  <section class="growth-section">
+    <h2>📊 Platform Overview</h2>
+    {kpi_html}
+  </section>
+
+  <section class="growth-section">
+    <h2>📈 Key Metrics</h2>
+    {metrics_html}
+  </section>
+
+  <section class="growth-section">
+    <h2>🎯 System Status</h2>
+    <ul style="margin-left: 1.5rem;">
+      <li>✅ Week 1: Property Intelligence</li>
+      <li>✅ Week 2: Investment Calculator</li>
+      <li>✅ Week 3: Property Matchmaker</li>
+      <li>✅ Week 4: Growth Map</li>
+      <li>✅ Week 5: Deal Room</li>
+      <li>✅ Week 6: Mega Investment Desk</li>
+      <li>✅ Week 7: Concierge Foundation</li>
+      <li>✅ Week 8: Opportunity Score™</li>
+      <li>✅ Week 9: CRM Intelligence</li>
+    </ul>
+  </section>
+</div>
+"""
+    return Response(layout("🎛️ Command Center", body, req, description="Executive dashboard & platform analytics"))
 
 
 def submit_enquiry(req):
@@ -2476,6 +4405,10 @@ def dispatch(req):
         return home(req)
     if path == "/properties" and m == "GET":
         return list_properties(req)
+    if path.startswith("/property/") and path.endswith("/intelligence") and m == "GET":
+        return property_intelligence(req, _int(path.split("/")[2]))
+    if path.startswith("/api/property/") and path.endswith("/scores") and m == "GET":
+        return api_property_scores(req, _int(path.split("/")[3]))
     if path.startswith("/property/") and m == "GET":
         return property_detail(req, _int(path.rsplit("/", 1)[1]))
     if path == "/enquiry" and m == "POST":
@@ -2488,6 +4421,64 @@ def dispatch(req):
         return invest_enquiry(req)
     if path.startswith("/invest/") and m == "GET":
         return invest_detail(req, _int(path.rsplit("/", 1)[1]))
+    if path == "/calculator" and m == "GET":
+        return calculator_page(req)
+    if path == "/api/calculate" and m == "POST":
+        return api_calculate(req)
+    if path == "/api/investment/calculate" and m == "POST":
+        return api_investment_calculate(req)
+    if path == "/match" and m == "GET":
+        return requirements_form(req)
+    if path == "/api/match-properties" and m == "POST":
+        return api_match_properties(req)
+    if path.startswith("/property/") and path.endswith("/interest") and m == "GET":
+        return property_reverse_match(req, _int(path.split("/")[2]))
+    if path == "/growth-map" and m == "GET":
+        return growth_map_page(req)
+    if path.startswith("/growth-map/") and m == "GET":
+        parts = path.split("/")[2:]
+        if len(parts) == 1:
+            return city_growth_detail(req, parts[0])
+        elif len(parts) == 2:
+            return locality_growth_detail(req, parts[0], parts[1])
+    if path == "/deals" and m == "GET":
+        return deals_list(req)
+    if path.startswith("/deal/") and m == "GET":
+        return deal_detail(req, _int(path.split("/")[2]))
+    if path == "/portfolios" and m == "GET":
+        return investment_desk_dashboard(req)
+    if path.startswith("/portfolio/") and m == "GET":
+        return portfolio_detail(req, _int(path.split("/")[2]))
+    if path == "/concierge" and m == "GET":
+        return concierge_dashboard(req)
+    if path == "/my-concierge" and m == "GET":
+        return my_concierge(req)
+    if path == "/opportunities" and m == "GET":
+        return opportunities_dashboard(req)
+    if path.startswith("/opportunity/") and m == "GET":
+        return opportunity_detail(req, _int(path.split("/")[2]))
+    if path == "/crm" and m == "GET":
+        return crm_dashboard(req)
+    if path == "/command-center" and m == "GET":
+        return command_center(req)
+
+    # API ENDPOINTS (Week 11)
+    if path == "/api/properties" and m == "GET":
+        conn = get_conn()
+        props = conn.execute("SELECT id, title, city, price FROM properties LIMIT 50").fetchall()
+        conn.close()
+        return Response(json.dumps([dict(p) for p in props]), headers={'Content-Type': 'application/json'})
+
+    if path == "/api/opportunities" and m == "GET":
+        conn = get_conn()
+        opps = conn.execute("SELECT property_id, opportunity_score FROM opportunity_scores WHERE opportunity_score >= 70 LIMIT 50").fetchall()
+        conn.close()
+        return Response(json.dumps([dict(o) for o in opps]), headers={'Content-Type': 'application/json'})
+
+    if path == "/api/platform-status" and m == "GET":
+        summary = get_executive_summary()
+        return Response(json.dumps(summary), headers={'Content-Type': 'application/json'})
+
     if path == "/compare" and m == "GET":
         return compare_page(req)
     if path == "/emi" and m == "GET":
