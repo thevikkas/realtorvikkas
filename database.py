@@ -2,11 +2,22 @@
 
 Zero external dependencies — uses the Python standard-library sqlite3 module.
 The database file (realtor.db) is created and seeded automatically on first run.
+
+Connection Management:
+  - Automatic connection cleanup (try-finally)
+  - Connection timeout handling (30 seconds)
+  - Busy timeout (5 seconds for concurrent access)
+  - Proper error handling with logging
 """
 
 import os
 import sqlite3
 from datetime import datetime
+import logging
+
+# Configure logging for database operations
+logging.basicConfig(level=logging.INFO)
+db_logger = logging.getLogger("database")
 
 # Where the SQLite file lives. In production (e.g. Render with a persistent
 # disk) set DATABASE_PATH to a path on that disk — e.g. /var/data/realtor.db —
@@ -1394,11 +1405,68 @@ CREATE TABLE IF NOT EXISTS advisor_lead_assignments (
 """
 
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def get_conn(timeout=30):
+    """
+    Get a database connection with proper error handling.
+
+    Args:
+        timeout: Connection timeout in seconds (default: 30)
+
+    Returns:
+        sqlite3.Connection with Row factory and foreign keys enabled
+
+    Raises:
+        sqlite3.OperationalError: If connection fails after timeout
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=timeout, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+
+        # Set busy timeout for concurrent access (5 seconds)
+        conn.execute("PRAGMA busy_timeout = 5000")
+
+        # Enable foreign key constraints
+        conn.execute("PRAGMA foreign_keys = ON")
+
+        # Enable WAL mode for better concurrency
+        conn.execute("PRAGMA journal_mode = WAL")
+
+        db_logger.debug(f"Database connection established (timeout: {timeout}s)")
+        return conn
+    except sqlite3.OperationalError as e:
+        db_logger.error(f"Failed to connect to database at {DB_PATH}: {e}")
+        raise
+
+
+def safe_query(query_func):
+    """
+    Decorator for safe database queries with automatic cleanup.
+    Ensures connections are properly closed even if errors occur.
+
+    Usage:
+        @safe_query
+        def my_query(conn):
+            return conn.execute("SELECT ...").fetchall()
+    """
+    def wrapper(*args, **kwargs):
+        conn = None
+        try:
+            conn = get_conn()
+            result = query_func(conn, *args, **kwargs)
+            conn.commit()
+            return result
+        except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
+            db_logger.error(f"Database error in {query_func.__name__}: {e}")
+            raise
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception as e:
+                    db_logger.warning(f"Error closing database connection: {e}")
+    return wrapper
 
 
 def now():
