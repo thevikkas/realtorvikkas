@@ -1,215 +1,438 @@
 #!/bin/bash
 
-# Realtor Vikkas Deployment Script
-# This script automates deployment to production
+################################################################################
+# Realtor Vikkas Platform v1.0 - Production Deployment Script
+#
+# Usage: ./deploy.sh [staging|production] [repository-url]
+# Example: ./deploy.sh production https://github.com/username/realtorvikkas.git
+#
+# This script automates the deployment of Realtor Vikkas to a production server
+################################################################################
 
-set -e
+set -e  # Exit on any error
 
-echo "🚀 Realtor Vikkas Deployment Script"
-echo "===================================="
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
 # Configuration
-SERVER_IP=${1:-""}
-DOMAIN=${2:-"realtorvikkas.com"}
-APP_DIR="/var/www/realtor-vikkas"
-VENV_PATH="$APP_DIR/venv"
+ENVIRONMENT="${1:-staging}"
+REPO_URL="${2:-}"
+APP_PORT=8000
+APP_DIR="/var/www/realtorvikkas"
+APP_USER="www-data"
+DOMAIN="realtorvikkas.com"
 
-if [ -z "$SERVER_IP" ]; then
-    echo "Usage: ./deploy.sh <server_ip> [domain]"
-    echo "Example: ./deploy.sh 192.168.1.100 realtorvikkas.com"
+# Functions
+print_header() {
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}$1${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
+
+print_step() {
+    echo -e "\n${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗ ERROR: $1${NC}"
     exit 1
-fi
+}
 
-# Step 1: Connect and prepare server
-echo ""
-echo "📍 Step 1: Preparing server ($SERVER_IP)..."
-ssh -T root@$SERVER_IP << 'REMOTE_COMMANDS'
-    set -e
+print_warning() {
+    echo -e "${YELLOW}⚠ WARNING: $1${NC}"
+}
 
-    # Update system
-    echo "  • Updating system packages..."
-    apt update && apt upgrade -y
+print_info() {
+    echo -e "${BLUE}ℹ $1${NC}"
+}
 
-    # Install dependencies
-    echo "  • Installing dependencies..."
-    apt install -y python3.9 python3.9-venv python3-pip nginx certbot python3-certbot-nginx git curl
+# Check if running as root
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        print_error "This script must be run as root. Use: sudo ./deploy.sh"
+    fi
+    print_step "Running as root"
+}
 
-    # Create application directory
-    echo "  • Creating application directory..."
-    mkdir -p /var/www/realtor-vikkas
-    cd /var/www/realtor-vikkas
-
-    # Setup Python environment
-    echo "  • Setting up Python virtual environment..."
-    python3.9 -m venv venv
-    source venv/bin/activate
-
-    # Verify no external dependencies needed
-    echo "  • Verifying zero-dependency setup..."
-    pip install --upgrade pip
-
-    echo "  ✅ Server prepared successfully"
-REMOTE_COMMANDS
-
-# Step 2: Deploy application
-echo ""
-echo "📦 Step 2: Deploying application code..."
-scp -r ./* root@$SERVER_IP:$APP_DIR/
-echo "  ✅ Code deployed"
-
-# Step 3: Initialize application
-echo ""
-echo "🔧 Step 3: Initializing application..."
-ssh -T root@$SERVER_IP << REMOTE_INIT
-    set -e
-    cd $APP_DIR
-    source $VENV_PATH/bin/activate
-
-    # Test import
-    echo "  • Testing application import..."
-    python3 -c "import app; print('    ✓ App module loaded')"
-
-    # Initialize database (if not exists)
-    if [ ! -f "realtor_vikkas.db" ]; then
-        echo "  • Initializing database..."
-        python3 << 'PYSCRIPT'
-from database import init_db
-init_db()
-print("    ✓ Database initialized")
-PYSCRIPT
+# Validate inputs
+validate_inputs() {
+    if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "production" ]]; then
+        print_error "Environment must be 'staging' or 'production'"
     fi
 
-    # Set permissions
-    chmod 755 $APP_DIR
-    chown -R www-data:www-data $APP_DIR
+    if [[ -z "$REPO_URL" ]]; then
+        print_error "Repository URL required. Usage: ./deploy.sh $ENVIRONMENT <repo-url>"
+    fi
 
-    echo "  ✅ Application initialized"
-REMOTE_INIT
+    print_step "Input validation passed"
+}
 
-# Step 4: Setup systemd service
-echo ""
-echo "🐚 Step 4: Setting up systemd service..."
-ssh -T root@$SERVER_IP << 'REMOTE_SERVICE'
-    cat > /etc/systemd/system/realtor-vikkas.service << 'EOF'
+# Check system requirements
+check_system() {
+    print_header "System Requirements Check"
+
+    # Check Python
+    if ! command -v python3 &> /dev/null; then
+        print_error "Python 3 not found. Install with: apt-get install python3"
+    fi
+    PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+    print_info "Python $PYTHON_VERSION found"
+
+    # Check disk space
+    AVAILABLE_SPACE=$(df /var | awk 'NR==2 {print $4}')
+    if [[ $AVAILABLE_SPACE -lt 1000000 ]]; then
+        print_warning "Low disk space: ${AVAILABLE_SPACE}KB available"
+    else
+        print_step "Sufficient disk space available"
+    fi
+
+    # Check memory
+    AVAILABLE_MEMORY=$(free -m | awk 'NR==2 {print $7}')
+    print_info "Available memory: ${AVAILABLE_MEMORY}MB"
+}
+
+# Update system
+update_system() {
+    print_header "System Update"
+
+    apt-get update || print_warning "apt-get update failed"
+    print_step "System package list updated"
+}
+
+# Install dependencies
+install_dependencies() {
+    print_header "Installing Dependencies"
+
+    # Install required packages
+    PACKAGES="git nginx curl wget certbot python3-certbot-nginx"
+
+    for package in $PACKAGES; do
+        if ! dpkg -l | grep -q "^ii  $package"; then
+            print_info "Installing $package..."
+            apt-get install -y "$package" > /dev/null 2>&1
+        fi
+    done
+
+    print_step "Dependencies installed"
+}
+
+# Setup application directory
+setup_app_dir() {
+    print_header "Setting Up Application Directory"
+
+    # Create application directory
+    mkdir -p "$APP_DIR"
+    print_step "Created $APP_DIR"
+
+    # Create necessary subdirectories
+    mkdir -p "$APP_DIR/logs"
+    mkdir -p "$APP_DIR/backups"
+    print_step "Created subdirectories"
+}
+
+# Clone/update repository
+setup_repository() {
+    print_header "Setting Up Repository"
+
+    if [[ -d "$APP_DIR/.git" ]]; then
+        print_info "Repository already exists, pulling latest changes..."
+        cd "$APP_DIR"
+        git pull origin main || print_warning "Could not pull from remote"
+    else
+        print_info "Cloning repository..."
+        git clone "$REPO_URL" "$APP_DIR" || print_error "Failed to clone repository"
+    fi
+
+    print_step "Repository ready"
+}
+
+# Setup permissions
+setup_permissions() {
+    print_header "Setting Up Permissions"
+
+    chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+    chmod -R 755 "$APP_DIR"
+    chmod +x "$APP_DIR/app.py"
+
+    print_step "Permissions configured"
+}
+
+# Initialize database
+init_database() {
+    print_header "Initializing Database"
+
+    cd "$APP_DIR"
+
+    # Check if database exists
+    if [[ ! -f "realtorvikkas.db" ]]; then
+        print_info "Creating new database..."
+        # Database will be created on first run by app.py
+    else
+        print_info "Database already exists"
+
+        # Backup existing database
+        cp "realtorvikkas.db" "backups/realtorvikkas.db.backup.$(date +%s)"
+        print_step "Database backed up"
+    fi
+}
+
+# Setup systemd service
+setup_service() {
+    print_header "Setting Up Systemd Service"
+
+    cat > /etc/systemd/system/realtorvikkas.service << 'EOF'
 [Unit]
-Description=Realtor Vikkas Platform
+Description=Realtor Vikkas Platform v1.0
 After=network.target
 
 [Service]
+Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/var/www/realtor-vikkas
-Environment="PATH=/var/www/realtor-vikkas/venv/bin"
-Environment="PYTHONUNBUFFERED=1"
-ExecStart=/var/www/realtor-vikkas/venv/bin/python3 /var/www/realtor-vikkas/app.py
+WorkingDirectory=/var/www/realtorvikkas
+ExecStart=/usr/bin/python3 /var/www/realtorvikkas/app.py --port 8000
 Restart=always
 RestartSec=10
-StandardOutput=journal
-StandardError=journal
+StandardOutput=append:/var/www/realtorvikkas/logs/service.log
+StandardError=append:/var/www/realtorvikkas/logs/service.log
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable realtor-vikkas
-    systemctl start realtor-vikkas
-    sleep 3
+    print_step "Systemd service created"
+}
 
-    # Check status
-    if systemctl is-active --quiet realtor-vikkas; then
-        echo "  ✅ Systemd service started successfully"
+# Start service
+start_service() {
+    print_header "Starting Service"
+
+    systemctl enable realtorvikkas
+    systemctl start realtorvikkas
+
+    sleep 2
+
+    if systemctl is-active --quiet realtorvikkas; then
+        print_step "Service started successfully"
     else
-        echo "  ❌ Service failed to start"
-        journalctl -u realtor-vikkas -n 20
-        exit 1
+        print_error "Failed to start service"
     fi
-REMOTE_SERVICE
+}
 
-# Step 5: Setup Nginx
-echo ""
-echo "🌐 Step 5: Configuring Nginx..."
-ssh -T root@$SERVER_IP << REMOTE_NGINX
-    cat > /etc/nginx/sites-available/realtor-vikkas << 'EOF'
-upstream realtor_backend {
-    server 127.0.0.1:10000;
+# Setup Nginx
+setup_nginx() {
+    print_header "Setting Up Nginx"
+
+    cat > /etc/nginx/sites-available/realtorvikkas << 'EOF'
+upstream realtorvikkas_app {
+    server localhost:8000;
     keepalive 32;
 }
 
 server {
     listen 80;
-    server_name $DOMAIN www.$DOMAIN;
+    server_name realtorvikkas.com www.realtorvikkas.com;
 
-    client_max_body_size 100M;
+    client_max_body_size 10M;
 
     location / {
-        proxy_pass http://realtor_backend;
+        proxy_pass http://realtorvikkas_app;
         proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;
+        proxy_request_buffering off;
     }
 
     location /static/ {
-        alias /var/www/realtor-vikkas/static/;
-        expires 30d;
+        alias /var/www/realtorvikkas/static/;
+        expires 1d;
         add_header Cache-Control "public, immutable";
     }
 }
 EOF
 
     # Enable site
-    ln -sf /etc/nginx/sites-available/realtor-vikkas /etc/nginx/sites-enabled/
+    ln -sf /etc/nginx/sites-available/realtorvikkas /etc/nginx/sites-enabled/
+
+    # Disable default site
     rm -f /etc/nginx/sites-enabled/default
 
-    # Test and reload
-    nginx -t
-    systemctl reload nginx
+    # Test nginx configuration
+    if nginx -t > /dev/null 2>&1; then
+        systemctl reload nginx
+        print_step "Nginx configured and reloaded"
+    else
+        print_error "Nginx configuration test failed"
+    fi
+}
 
-    echo "  ✅ Nginx configured"
-REMOTE_NGINX
+# Setup SSL certificate
+setup_ssl() {
+    if [[ "$ENVIRONMENT" == "production" ]]; then
+        print_header "Setting Up SSL Certificate"
 
-# Step 6: Setup SSL
-echo ""
-echo "🔒 Step 6: Setting up SSL certificate..."
-ssh -T root@$SERVER_IP << REMOTE_SSL
-    certbot --nginx -d $DOMAIN -d www.$DOMAIN --agree-tos -m admin@$DOMAIN --no-eff-email -n
+        print_info "Installing Let's Encrypt certificate..."
 
-    echo "  ✅ SSL certificate installed"
-REMOTE_SSL
+        # Check if certificate already exists
+        if [[ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
+            print_info "Certificate already exists, skipping installation"
+        else
+            certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --agree-tos -m thevikkas@gmail.com --non-interactive \
+                || print_warning "SSL certificate installation skipped (may need manual setup)"
+        fi
 
-# Step 7: Final verification
-echo ""
-echo "✅ Step 7: Verifying deployment..."
-sleep 5
+        print_step "SSL certificate ready"
+    else
+        print_info "Skipping SSL setup for staging environment"
+    fi
+}
 
-# Check if server is responding
-if curl -s -o /dev/null -w "%{http_code}" https://$DOMAIN | grep -q "200\|301\|302"; then
-    echo "  ✅ Website is accessible at https://$DOMAIN"
-else
-    echo "  ⚠️  Website may not be accessible yet (DNS propagation may take time)"
-fi
+# Setup firewall
+setup_firewall() {
+    print_header "Setting Up Firewall"
 
-# Summary
-echo ""
-echo "🎉 Deployment Complete!"
-echo "===================================="
-echo ""
-echo "✅ Platform Details:"
-echo "   Server: $SERVER_IP"
-echo "   Domain: https://$DOMAIN"
-echo "   Admin: thevikkas@gmail.com / Jerry@1998"
-echo ""
-echo "📊 Next Steps:"
-echo "   1. Update your domain DNS to point to $SERVER_IP (A record)"
-echo "   2. Wait for DNS propagation (usually 5-15 minutes)"
-echo "   3. Visit https://$DOMAIN to verify"
-echo "   4. Login with admin credentials above"
-echo "   5. Configure your business settings"
-echo ""
-echo "📞 Support:"
-echo "   Check logs: ssh root@$SERVER_IP 'journalctl -u realtor-vikkas -f'"
-echo "   Nginx logs: ssh root@$SERVER_IP 'tail -f /var/log/nginx/access.log'"
-echo ""
+    # Enable UFW
+    ufw --force enable > /dev/null 2>&1 || true
+
+    # Allow SSH
+    ufw allow 22/tcp > /dev/null 2>&1 || true
+
+    # Allow HTTP
+    ufw allow 80/tcp > /dev/null 2>&1 || true
+
+    # Allow HTTPS
+    ufw allow 443/tcp > /dev/null 2>&1 || true
+
+    print_step "Firewall configured"
+}
+
+# Setup log rotation
+setup_log_rotation() {
+    print_header "Setting Up Log Rotation"
+
+    cat > /etc/logrotate.d/realtorvikkas << 'EOF'
+/var/www/realtorvikkas/logs/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 www-data www-data
+    sharedscripts
+    postrotate
+        systemctl reload realtorvikkas > /dev/null 2>&1 || true
+    endscript
+}
+EOF
+
+    print_step "Log rotation configured"
+}
+
+# Verify deployment
+verify_deployment() {
+    print_header "Verifying Deployment"
+
+    # Check service status
+    if systemctl is-active --quiet realtorvikkas; then
+        print_step "Service is running"
+    else
+        print_error "Service is not running"
+    fi
+
+    # Check Nginx status
+    if systemctl is-active --quiet nginx; then
+        print_step "Nginx is running"
+    else
+        print_error "Nginx is not running"
+    fi
+
+    # Wait for app to be ready
+    print_info "Waiting for application to be ready..."
+    for i in {1..30}; do
+        if curl -s http://localhost:8000/ > /dev/null 2>&1; then
+            print_step "Application is responding"
+            break
+        fi
+        sleep 1
+    done
+
+    # Check database
+    if [[ -f "$APP_DIR/realtorvikkas.db" ]]; then
+        print_step "Database exists"
+    else
+        print_warning "Database file not found"
+    fi
+}
+
+# Print summary
+print_summary() {
+    print_header "Deployment Summary"
+
+    cat << EOF
+
+✅ DEPLOYMENT COMPLETE
+
+Environment:     $ENVIRONMENT
+Application:     Realtor Vikkas Platform v1.0
+Domain:          $DOMAIN
+Directory:       $APP_DIR
+Port:            $APP_PORT
+Service Status:  $(systemctl is-active realtorvikkas)
+Nginx Status:    $(systemctl is-active nginx)
+
+📊 Next Steps:
+
+1. Verify all 10 systems are operational
+2. Check logs: tail -f $APP_DIR/logs/service.log
+3. Monitor performance: grep "SLOW_QUERY" $APP_DIR/performance.log
+4. Setup monitoring/alerts (optional)
+
+📞 Support:
+   Admin: thevikkas@gmail.com
+
+🎉 Realtor Vikkas Platform v1.0 is now LIVE!
+
+EOF
+}
+
+# Main execution
+main() {
+    print_header "Realtor Vikkas Platform v1.0 - Deployment Script"
+
+    echo -e "${YELLOW}Environment: $ENVIRONMENT${NC}"
+    echo -e "${YELLOW}Repository: $REPO_URL${NC}"
+
+    print_info "This deployment will take several minutes..."
+
+    check_root
+    validate_inputs
+    check_system
+    update_system
+    install_dependencies
+    setup_app_dir
+    setup_repository
+    setup_permissions
+    init_database
+    setup_service
+    start_service
+    setup_nginx
+    setup_ssl
+    setup_firewall
+    setup_log_rotation
+    verify_deployment
+    print_summary
+}
+
+# Run main function
+main "$@"

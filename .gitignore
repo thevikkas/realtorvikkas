@@ -4,3 +4,5 @@ __pycache__/
 .DS_Store
 listings/*.xlsx
 realtor.db.bak*
+realtor.db-shm
+realtor.db-wal
